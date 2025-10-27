@@ -492,6 +492,24 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#temporal-sae-gemma-2-2b" class="md-nav__link">
+    <span class="md-ellipsis">
+      temporal-sae-gemma-2-2b
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#temporal-sae-llama-31-8b" class="md-nav__link">
+    <span class="md-ellipsis">
+      temporal-sae-llama-3.1-8b
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#deepseek-r1-distill-llama-8b-qresearch" class="md-nav__link">
     <span class="md-ellipsis">
       deepseek-r1-distill-llama-8b-qresearch
@@ -1201,6 +1219,24 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#temporal-sae-gemma-2-2b" class="md-nav__link">
+    <span class="md-ellipsis">
+      temporal-sae-gemma-2-2b
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#temporal-sae-llama-31-8b" class="md-nav__link">
+    <span class="md-ellipsis">
+      temporal-sae-llama-3.1-8b
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#deepseek-r1-distill-llama-8b-qresearch" class="md-nav__link">
     <span class="md-ellipsis">
       deepseek-r1-distill-llama-8b-qresearch
@@ -1894,6 +1930,68 @@
 <h1 id="pretrained-saes">Pretrained SAEs</h1>
 <p>This is a list of SAEs importable from the SAELens package. Click on each link for more details.</p>
 <p><em>This file contains the contents of <code>sae_lens/pretrained_saes.yaml</code> in Markdown</em></p>
+<h2 id="temporal-sae-gemma-2-2b"><a href="https://huggingface.co/canrager/temporalSAEs">temporal-sae-gemma-2-2b</a></h2>
+<ul>
+<li><strong>Huggingface Repo</strong>: canrager/temporalSAEs</li>
+<li><strong>model</strong>: gemma-2-2b</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">id</th>
+<th style="text-align: left;">architecture</th>
+<th style="text-align: left;">neuronpedia</th>
+<th style="text-align: left;">hook_name</th>
+<th style="text-align: right;">d_sae</th>
+<th style="text-align: left;">normalize_activations</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><div>blocks.12.hook_resid_post</div><a class="saetable-loadSaeId" onclick="SaeTable.showCode('temporal-sae-gemma-2-2b', 'blocks.12.hook_resid_post')">Load this SAE</a></td>
+<td style="text-align: left;">temporal</td>
+<td style="text-align: left;">gemma-2-2b/12-temporal-res</td>
+<td style="text-align: left;">blocks.12.hook_resid_post</td>
+<td style="text-align: right;">9216</td>
+<td style="text-align: left;">constant_scalar_rescale</td>
+</tr>
+</tbody>
+</table>
+<h2 id="temporal-sae-llama-31-8b"><a href="https://huggingface.co/canrager/temporalSAEs">temporal-sae-llama-3.1-8b</a></h2>
+<ul>
+<li><strong>Huggingface Repo</strong>: canrager/temporalSAEs</li>
+<li><strong>model</strong>: meta-llama/Llama-3.1-8B</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th style="text-align: left;">id</th>
+<th style="text-align: left;">architecture</th>
+<th style="text-align: left;">neuronpedia</th>
+<th style="text-align: left;">hook_name</th>
+<th style="text-align: right;">d_sae</th>
+<th style="text-align: left;">normalize_activations</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><div>blocks.15.hook_resid_post</div><a class="saetable-loadSaeId" onclick="SaeTable.showCode('temporal-sae-llama-3.1-8b', 'blocks.15.hook_resid_post')">Load this SAE</a></td>
+<td style="text-align: left;">temporal</td>
+<td style="text-align: left;">llama3.1-8b/15-temporal-res</td>
+<td style="text-align: left;">blocks.15.hook_resid_post</td>
+<td style="text-align: right;">16384</td>
+<td style="text-align: left;">constant_scalar_rescale</td>
+</tr>
+<tr>
+<td style="text-align: left;"><div>blocks.26.hook_resid_post</div><a class="saetable-loadSaeId" onclick="SaeTable.showCode('temporal-sae-llama-3.1-8b', 'blocks.26.hook_resid_post')">Load this SAE</a></td>
+<td style="text-align: left;">temporal</td>
+<td style="text-align: left;">llama3.1-8b/26-temporal-res</td>
+<td style="text-align: left;">blocks.26.hook_resid_post</td>
+<td style="text-align: right;">16384</td>
+<td style="text-align: left;">constant_scalar_rescale</td>
+</tr>
+</tbody>
+</table>
 <h2 id="deepseek-r1-distill-llama-8b-qresearch"><a href="https://huggingface.co/qresearch/DeepSeek-R1-Distill-Llama-8B-SAE-l19">deepseek-r1-distill-llama-8b-qresearch</a></h2>
 <ul>
 <li><strong>Huggingface Repo</strong>: qresearch/DeepSeek-R1-Distill-Llama-8B-SAE-l19</li>
