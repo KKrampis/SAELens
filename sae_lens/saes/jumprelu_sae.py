@@ -168,7 +168,7 @@ class JumpReLUSAE(SAE[JumpReLUSAEConfig]):
         current_thresh = self.threshold.clone()
 
         # Get W_dec norms that will be used for scaling
-        W_dec_norms = self.W_dec.norm(dim=-1)
+        W_dec_norms = self.W_dec.norm(dim=-1).clamp(min=1e-8)
 
         # Call parent implementation to handle W_enc, W_dec, and b_enc adjustment
         super().fold_W_dec_norm()
@@ -326,7 +326,7 @@ class JumpReLUTrainingSAE(TrainingSAE[JumpReLUTrainingSAEConfig]):
         current_thresh = self.threshold.clone()
 
         # Get W_dec norms
-        W_dec_norms = self.W_dec.norm(dim=-1).unsqueeze(1)
+        W_dec_norms = self.W_dec.norm(dim=-1).clamp(min=1e-8).unsqueeze(1)
 
         # Call parent implementation to handle W_enc and W_dec adjustment
         super().fold_W_dec_norm()

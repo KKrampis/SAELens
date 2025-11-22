@@ -15,6 +15,7 @@ from sae_lens.saes.sae import (
     TrainingSAEConfig,
 )
 from tests.helpers import (
+    ALL_FOLDABLE_ARCHITECTURES,
     ALL_TRAINING_ARCHITECTURES,
     assert_close,
     build_sae_training_cfg_for_arch,
@@ -266,3 +267,34 @@ def test_TrainingSAE_save_and_load_from_checkpoint_all_architectures(
 
     for param1, param2 in zip(sae.parameters(), loaded_sae.parameters()):
         assert_close(param1, param2, atol=1e-6, rtol=1e-4)
+
+
+@pytest.mark.parametrize("architecture", ALL_FOLDABLE_ARCHITECTURES)
+def test_fold_W_dec_norm_does_not_produce_nan_with_zero_norm_decoder(
+    architecture: str,
+):
+    """Test that fold_W_dec_norm handles zero-norm decoder rows without producing NaN.
+
+    This is a regression test for issue #588 where dead latents with zero-norm
+    decoder weights would cause division by zero, resulting in NaN values.
+    """
+    cfg = build_sae_training_cfg_for_arch(architecture)
+    sae = TrainingSAE.from_dict(cfg.to_dict())
+    random_params(sae)
+
+    # Set some decoder rows to zero to simulate dead latents
+    with torch.no_grad():
+        sae.W_dec.data[0] = 0.0  # First row
+        sae.W_dec.data[5] = 0.0  # Arbitrary middle row
+        sae.W_dec.data[-1] = 0.0  # Last row
+
+    # This should not raise and should not produce NaN values
+    sae.fold_W_dec_norm()
+
+    # Verify no NaN values in any parameters
+    for name, param in sae.named_parameters():
+        assert not torch.isnan(param).any(), f"NaN found in {name} after fold_W_dec_norm"
+
+    # Verify W_dec rows that were zero are still valid (not NaN, not Inf)
+    assert torch.isfinite(sae.W_dec).all(), "W_dec contains non-finite values"
+    assert torch.isfinite(sae.W_enc).all(), "W_enc contains non-finite values"
