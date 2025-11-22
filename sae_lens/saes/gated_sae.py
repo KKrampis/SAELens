@@ -90,6 +90,8 @@ class GatedSAE(SAE[GatedSAEConfig]):
     def fold_W_dec_norm(self):
         """Override to handle gated-specific parameters."""
         W_dec_norms = self.W_dec.norm(dim=-1).unsqueeze(1)
+        # Add epsilon to avoid division by zero for zero-norm latents
+        W_dec_norms = W_dec_norms.clamp(min=1e-8)
         self.W_dec.data = self.W_dec.data / W_dec_norms
         self.W_enc.data = self.W_enc.data * W_dec_norms.T
 
@@ -218,6 +220,8 @@ class GatedTrainingSAE(TrainingSAE[GatedTrainingSAEConfig]):
     def fold_W_dec_norm(self):
         """Override to handle gated-specific parameters."""
         W_dec_norms = self.W_dec.norm(dim=-1).unsqueeze(1)
+        # Add epsilon to avoid division by zero for zero-norm latents
+        W_dec_norms = W_dec_norms.clamp(min=1e-8)
         self.W_dec.data = self.W_dec.data / W_dec_norms
         self.W_enc.data = self.W_enc.data * W_dec_norms.T
 

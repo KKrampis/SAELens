@@ -485,6 +485,8 @@ class SAE(HookedRootModule, Generic[T_SAE_CONFIG], ABC):
     def fold_W_dec_norm(self):
         """Fold decoder norms into encoder."""
         W_dec_norms = self.W_dec.norm(dim=-1).unsqueeze(1)
+        # Add epsilon to avoid division by zero for zero-norm latents
+        W_dec_norms = W_dec_norms.clamp(min=1e-8)
         self.W_dec.data = self.W_dec.data / W_dec_norms
         self.W_enc.data = self.W_enc.data * W_dec_norms.T
 
