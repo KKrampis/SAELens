@@ -12,13 +12,11 @@
         <meta name="author" content="Joseph Bloom">
       
       
-        <link rel="canonical" href="https://decoderesearch.github.io/SAELens/v6.23.0/contributing/">
+        <link rel="canonical" href="https://decoderesearch.github.io/SAELens/v6.23.0/pretrained_saes/">
       
       
-        <link rel="prev" href="../citation/">
+        <link rel="prev" href="../api/">
       
-      
-        <link rel="next" href="../migrating/">
       
       
         
@@ -29,7 +27,7 @@
     
     
       
-        <title>Contributing - SAE Lens</title>
+        <title>Pretrained SAEs - SAE Lens</title>
       
     
     
@@ -84,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#contributing" class="md-skip">
+        <a href="#pretrained-saes" class="md-skip">
           Skip to content
         </a>
       
@@ -124,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Contributing
+              Pretrained SAEs
             
           </span>
         </div>
@@ -402,37 +400,10 @@
       
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Contributing
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
         
   
   
@@ -448,59 +419,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Setup
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#testing-linting-and-formatting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Testing, Linting, and Formatting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#documentation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Documentation
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -563,10 +481,37 @@
       
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../pretrained_saes/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pretrained SAEs
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -582,6 +527,37 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#models" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Models
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -613,32 +589,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#setup" class="md-nav__link">
+  <a href="#models" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Setup
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#testing-linting-and-formatting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Testing, Linting, and Formatting
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#documentation" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Documentation
+        Models
       
     </span>
   </a>
@@ -670,32 +624,131 @@
 
 
 
-<h1 id="contributing">Contributing</h1>
-<p>Contributions are welcome! To get setup for development, follow the instructions below.</p>
-<h2 id="setup">Setup</h2>
-<p>Make sure you have <a href="https://python-poetry.org/">poetry</a> installed, clone the repository, and install dependencies with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/decoderesearch/SAELens.git<span class="w"> </span><span class="c1"># we recommend you make a fork for submitting PR&#39;s and clone that!</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>poetry<span class="w"> </span>lock<span class="w"> </span><span class="c1"># can take a while.</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>poetry<span class="w"> </span>install
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>make<span class="w"> </span>check-ci<span class="w"> </span><span class="c1"># validate the install</span>
-</span></code></pre></div>
-<h2 id="testing-linting-and-formatting">Testing, Linting, and Formatting</h2>
-<p>This project uses <a href="https://docs.pytest.org/en/stable/">pytest</a> for testing, <a href="https://github.com/microsoft/pyright">pyright</a> for type-checking, and <a href="https://docs.astral.sh/ruff/">Ruff</a> for formatting and linting.</p>
-<p>If you add new code, it would be greatly appreciated if you could add tests in the <code>tests</code> directory. You can run the tests with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>make<span class="w"> </span><span class="nb">test</span>
-</span></code></pre></div>
-<p>Before commiting, make sure you format the code with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>make<span class="w"> </span>format
-</span></code></pre></div>
-<p>Finally, run all CI checks locally with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>make<span class="w"> </span>check-ci
-</span></code></pre></div>
-<p>If these pass, you're good to go! Open a pull request with your changes.</p>
-<h2 id="documentation">Documentation</h2>
-<p>This project uses <a href="https://www.mkdocs.org/">mkdocs</a> for documentation. You can see the docs locally with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>make<span class="w"> </span>docs-serve
-</span></code></pre></div>
-<p>If you make changes to code which requires updating documentation, it would be greatly appreciated if you could update the docs as well.</p>
+<h1 id="pretrained-saes">Pretrained SAEs</h1>
+<p>This is a list of SAEs importable from the SAELens package. Click on a model to see all available SAEs.</p>
+<p><em>These pages contain the contents of <code>sae_lens/pretrained_saes.yaml</code> in Markdown</em></p>
+<h2 id="models">Models</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Releases</th>
+<th>Total SAEs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="deepseek-ai_deepseek-r1-distill-llama-8b/">deepseek-r1-distill-llama-8b</a></td>
+<td>2</td>
+<td>97</td>
+</tr>
+<tr>
+<td><a href="gemma-2-27b/">gemma-2-27b</a></td>
+<td>2</td>
+<td>21</td>
+</tr>
+<tr>
+<td><a href="gemma-2-2b/">gemma-2-2b</a></td>
+<td>20</td>
+<td>1731</td>
+</tr>
+<tr>
+<td><a href="gemma-2-9b/">gemma-2-9b</a></td>
+<td>8</td>
+<td>1849</td>
+</tr>
+<tr>
+<td><a href="gemma-2-9b-it/">gemma-2-9b-it</a></td>
+<td>1</td>
+<td>6</td>
+</tr>
+<tr>
+<td><a href="gemma-2b/">gemma-2b</a></td>
+<td>1</td>
+<td>5</td>
+</tr>
+<tr>
+<td><a href="gemma-2b-it/">gemma-2b-it</a></td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td><a href="gemma-3-1b/">gemma-3-1b</a></td>
+<td>1</td>
+<td>25</td>
+</tr>
+<tr>
+<td><a href="openai_gpt-oss-20b/">gpt-oss-20b</a></td>
+<td>1</td>
+<td>6</td>
+</tr>
+<tr>
+<td><a href="gpt2-small/">gpt2-small</a></td>
+<td>18</td>
+<td>159</td>
+</tr>
+<tr>
+<td><a href="meta-llama_llama-3.1-8b/">llama-3.1-8b</a></td>
+<td>7</td>
+<td>194</td>
+</tr>
+<tr>
+<td><a href="meta-llama_llama-3.1-8b-instruct/">llama-3.1-8b-instruct</a></td>
+<td>2</td>
+<td>8</td>
+</tr>
+<tr>
+<td><a href="meta-llama_llama-3.3-70b-instruct/">llama-3.3-70b-instruct</a></td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td><a href="meta-llama_meta-llama-3-8b-instruct/">meta-llama-3-8b-instruct</a></td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td><a href="mistral-7b/">mistral-7b</a></td>
+<td>1</td>
+<td>3</td>
+</tr>
+<tr>
+<td><a href="pythia-70m-deduped/">pythia-70m-deduped</a></td>
+<td>7</td>
+<td>207</td>
+</tr>
+<tr>
+<td><a href="qwen_qwen2.5-7b-instruct/">qwen2.5-7b-instruct</a></td>
+<td>1</td>
+<td>7</td>
+</tr>
+<tr>
+<td><a href="qwen3-0.6b/">qwen3-0.6b</a></td>
+<td>1</td>
+<td>28</td>
+</tr>
+<tr>
+<td><a href="qwen3-1.7b/">qwen3-1.7b</a></td>
+<td>1</td>
+<td>28</td>
+</tr>
+<tr>
+<td><a href="qwen3-14b/">qwen3-14b</a></td>
+<td>2</td>
+<td>80</td>
+</tr>
+<tr>
+<td><a href="qwen3-4b/">qwen3-4b</a></td>
+<td>1</td>
+<td>36</td>
+</tr>
+<tr>
+<td><a href="qwen3-8b/">qwen3-8b</a></td>
+<td>1</td>
+<td>36</td>
+</tr>
+</tbody>
+</table>
 
 
 

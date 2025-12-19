@@ -636,14 +636,14 @@
   
   
     <li class="md-nav__item">
-      <a href="sae_table/" class="md-nav__link">
+      <a href="pretrained_saes/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Supported SAEs
+    Pretrained SAEs
   
 
     
@@ -798,6 +798,14 @@
           
             <div class="md-content" data-md-component="content">
               
+                
+
+
+
+  
+
+
+              
               <article class="md-content__inner md-typeset">
                 
                   
@@ -839,7 +847,7 @@
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">device</span> <span class="o">=</span> <span class="s2">&quot;cuda&quot;</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="p">)</span>
 </span></code></pre></div>
-<p>You can see other importable SAEs on <a href="https://decoderesearch.github.io/SAELens/sae_table/">this page</a>.</p>
+<p>You can see other importable SAEs on <a href="https://decoderesearch.github.io/SAELens/pretrained_saes/">this page</a>.</p>
 <p>Any SAE on Huggingface that's trained using SAELens can also be loaded using <code>SAE.from_pretrained()</code>. In this case, <code>release</code> is the name of the Huggingface repo, and <code>sae_id</code> is the path to the SAE in the repo. You can see a list of SAEs listed on Huggingface with the <a href="https://huggingface.co/models?library=saelens">saelens tag</a>.</p>
 <h3 id="loading-sparse-autoencoders-from-disk">Loading Sparse Autoencoders from Disk</h3>
 <p>To load a pretrained sparse autoencoder from disk that you've trained yourself, you can use <code>SAE.load_from_disk()</code> as below.</p>
@@ -919,7 +927,7 @@
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.instant"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.instant", "navigation.path"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
     
     
       <script src="assets/javascripts/bundle.79ae519e.min.js"></script>
