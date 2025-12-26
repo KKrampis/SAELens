@@ -674,26 +674,26 @@
 <p>Contributions are welcome! To get setup for development, follow the instructions below.</p>
 <h2 id="setup">Setup</h2>
 <p>Make sure you have <a href="https://python-poetry.org/">poetry</a> installed, clone the repository, and install dependencies with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/decoderesearch/SAELens.git<span class="w"> </span><span class="c1"># we recommend you make a fork for submitting PR&#39;s and clone that!</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>poetry<span class="w"> </span>lock<span class="w"> </span><span class="c1"># can take a while.</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>poetry<span class="w"> </span>install
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>make<span class="w"> </span>check-ci<span class="w"> </span><span class="c1"># validate the install</span>
+<div class="highlight"><pre><span></span><code><span id="__span-0-1"><a href="#__codelineno-0-1" id="__codelineno-0-1" name="__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/decoderesearch/SAELens.git<span class="w"> </span><span class="c1"># we recommend you make a fork for submitting PR's and clone that!</span>
+</span><span id="__span-0-2"><a href="#__codelineno-0-2" id="__codelineno-0-2" name="__codelineno-0-2"></a>poetry<span class="w"> </span>lock<span class="w"> </span><span class="c1"># can take a while.</span>
+</span><span id="__span-0-3"><a href="#__codelineno-0-3" id="__codelineno-0-3" name="__codelineno-0-3"></a>poetry<span class="w"> </span>install
+</span><span id="__span-0-4"><a href="#__codelineno-0-4" id="__codelineno-0-4" name="__codelineno-0-4"></a>make<span class="w"> </span>check-ci<span class="w"> </span><span class="c1"># validate the install</span>
 </span></code></pre></div>
 <h2 id="testing-linting-and-formatting">Testing, Linting, and Formatting</h2>
 <p>This project uses <a href="https://docs.pytest.org/en/stable/">pytest</a> for testing, <a href="https://github.com/microsoft/pyright">pyright</a> for type-checking, and <a href="https://docs.astral.sh/ruff/">Ruff</a> for formatting and linting.</p>
 <p>If you add new code, it would be greatly appreciated if you could add tests in the <code>tests</code> directory. You can run the tests with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>make<span class="w"> </span><span class="nb">test</span>
+<div class="highlight"><pre><span></span><code><span id="__span-1-1"><a href="#__codelineno-1-1" id="__codelineno-1-1" name="__codelineno-1-1"></a>make<span class="w"> </span><span class="nb">test</span>
 </span></code></pre></div>
 <p>Before commiting, make sure you format the code with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>make<span class="w"> </span>format
+<div class="highlight"><pre><span></span><code><span id="__span-2-1"><a href="#__codelineno-2-1" id="__codelineno-2-1" name="__codelineno-2-1"></a>make<span class="w"> </span>format
 </span></code></pre></div>
 <p>Finally, run all CI checks locally with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>make<span class="w"> </span>check-ci
+<div class="highlight"><pre><span></span><code><span id="__span-3-1"><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a>make<span class="w"> </span>check-ci
 </span></code></pre></div>
 <p>If these pass, you're good to go! Open a pull request with your changes.</p>
 <h2 id="documentation">Documentation</h2>
 <p>This project uses <a href="https://www.mkdocs.org/">mkdocs</a> for documentation. You can see the docs locally with:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>make<span class="w"> </span>docs-serve
+<div class="highlight"><pre><span></span><code><span id="__span-4-1"><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a>make<span class="w"> </span>docs-serve
 </span></code></pre></div>
 <p>If you make changes to code which requires updating documentation, it would be greatly appreciated if you could update the docs as well.</p>
 

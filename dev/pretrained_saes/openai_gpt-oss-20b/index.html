@@ -625,12 +625,12 @@
 </tr>
 </tbody>
 </table>
-<div id="codeModal" class="saetable-modal">
-    <div class="saetable-modalContent">
-        <span class="saetable-close" onclick="SaeTable.closeCode()">&times;</span>
-        <pre><code id="codeContent" onclick="SaeTable.selectCode(this)"></code></pre>
-        <button onclick="SaeTable.copyCode()" class="saetable-copyButton">Copy Code</button>
-    </div>
+<div class="saetable-modal" id="codeModal">
+<div class="saetable-modalContent">
+<span class="saetable-close" onclick="SaeTable.closeCode()">×</span>
+<pre><code id="codeContent" onclick="SaeTable.selectCode(this)"></code></pre>
+<button class="saetable-copyButton" onclick="SaeTable.copyCode()">Copy Code</button>
+</div>
 </div>
 
 
