@@ -294,12 +294,14 @@ class CacheActivationsRunner:
             shuffled_path = final_cached_activation_path / ".shuffled"
             dataset.save_to_disk(str(shuffled_path))
             # Remove old unshuffled data and replace with shuffled
+            # Only remove known dataset files (from _consolidate_shards output)
             for item in final_cached_activation_path.iterdir():
-                if item.name != ".shuffled":
-                    if item.is_dir():
-                        shutil.rmtree(item)
-                    else:
-                        item.unlink()
+                is_arrow_file = (
+                    item.name.startswith("data-") and item.suffix == ".arrow"
+                )
+                is_dataset_metadata = item.name in ("dataset_info.json", "state.json")
+                if is_arrow_file or is_dataset_metadata:
+                    item.unlink()
             for item in shuffled_path.iterdir():
                 shutil.move(str(item), str(final_cached_activation_path / item.name))
             shuffled_path.rmdir()
