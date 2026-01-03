@@ -16,7 +16,7 @@ from sae_lens import logger
 from sae_lens.config import CacheActivationsRunnerConfig
 from sae_lens.load_model import load_model
 from sae_lens.training.activations_store import ActivationsStore
-from sae_lens.util import str_to_dtype
+from sae_lens.util import get_special_token_ids, str_to_dtype
 
 
 def _mk_activations_store(
@@ -28,6 +28,16 @@ def _mk_activations_store(
     Internal method used in CacheActivationsRunner. Used to create a cached dataset
     from a ActivationsStore.
     """
+    device = torch.device("cpu")  # since we're saving to disk
+    exclude_special_tokens = cfg.exclude_special_tokens
+    if exclude_special_tokens is False:
+        exclude_special_tokens = None
+    if exclude_special_tokens is True:
+        exclude_special_tokens = get_special_token_ids(model.tokenizer)  # type: ignore
+    if exclude_special_tokens is not None:
+        exclude_special_tokens = torch.tensor(
+            exclude_special_tokens, dtype=torch.long, device=device
+        )
     return ActivationsStore(
         model=model,
         dataset=override_dataset or cfg.dataset_path,
@@ -42,13 +52,16 @@ def _mk_activations_store(
         train_batch_size_tokens=-1,
         prepend_bos=cfg.prepend_bos,
         normalize_activations="none",
-        device=torch.device("cpu"),  # since we're saving to disk
+        device=device,
         dtype=cfg.dtype,
         cached_activations_path=None,
         model_kwargs=cfg.model_kwargs,
         autocast_lm=cfg.autocast_lm,
         dataset_trust_remote_code=cfg.dataset_trust_remote_code,
         seqpos_slice=cfg.seqpos_slice,
+        exclude_special_tokens=exclude_special_tokens,
+        disable_concat_sequences=cfg.disable_concat_sequences,
+        sequence_separator_token=cfg.sequence_separator_token,
     )
 
 
