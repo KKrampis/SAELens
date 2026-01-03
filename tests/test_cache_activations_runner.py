@@ -452,3 +452,72 @@ def test_cache_activations_runner_shuffling(tmp_path: Path):
             torch.from_numpy(unshuffled_acts_array[i]),
             torch.from_numpy(shuffled_acts_array[shuffled_idx]),
         )
+
+
+def test_cache_activations_runner_shuffled_saved_to_disk(tmp_path: Path):
+    """Test that when shuffle=True, the shuffled dataset is saved to disk (not just returned)."""
+    # Create test dataset with arbitrary unique tokens
+    tokenizer = HookedTransformer.from_pretrained("gelu-1l").tokenizer
+    text = "".join(
+        [
+            " " + word[1:]
+            for word in tokenizer.vocab  # type: ignore
+            if word[0] == "Ġ" and word[1:].isascii() and word.isalnum()
+        ]
+    )
+    dataset = Dataset.from_list([{"text": text}])
+
+    # Create configs for unshuffled and shuffled versions
+    unshuffled_path = tmp_path / "unshuffled"
+    shuffled_path = tmp_path / "shuffled"
+
+    unshuffled_cfg = _default_cfg(
+        unshuffled_path,
+        context_size=3,
+        batch_size=2,
+        dataset_num_rows=8,
+        shuffle=False,
+    )
+    shuffled_cfg = _default_cfg(
+        shuffled_path,
+        context_size=3,
+        batch_size=2,
+        dataset_num_rows=8,
+        shuffle=True,
+    )
+
+    # Run both
+    unshuffled_runner = CacheActivationsRunner(unshuffled_cfg, override_dataset=dataset)
+    unshuffled_runner.run()
+
+    shuffled_runner = CacheActivationsRunner(shuffled_cfg, override_dataset=dataset)
+    returned_shuffled_ds = shuffled_runner.run()
+    returned_shuffled_ds.set_format("torch")
+
+    # Load datasets from disk
+    unshuffled_from_disk = datasets.load_from_disk(str(unshuffled_path))
+    shuffled_from_disk = datasets.load_from_disk(str(shuffled_path))
+    unshuffled_from_disk.set_format("torch")
+    shuffled_from_disk.set_format("torch")
+
+    hook_name = unshuffled_cfg.hook_name
+
+    # Verify the shuffled dataset on disk is different from the unshuffled one
+    unshuffled_tokens = np.array(unshuffled_from_disk["token_ids"])
+    shuffled_tokens_on_disk = np.array(shuffled_from_disk["token_ids"])
+    assert not np.array_equal(
+        unshuffled_tokens, shuffled_tokens_on_disk
+    ), "Shuffled dataset on disk should be different from unshuffled"
+
+    # Verify the shuffled dataset on disk matches what was returned
+    returned_tokens = np.array(returned_shuffled_ds["token_ids"])
+    assert np.array_equal(
+        shuffled_tokens_on_disk, returned_tokens
+    ), "Dataset on disk should match returned dataset"
+
+    # Also verify activations match
+    shuffled_acts_on_disk = np.array(shuffled_from_disk[hook_name])
+    returned_acts = np.array(returned_shuffled_ds[hook_name])
+    assert np.array_equal(
+        shuffled_acts_on_disk, returned_acts
+    ), "Activations on disk should match returned activations"

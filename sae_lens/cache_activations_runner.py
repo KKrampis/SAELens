@@ -234,7 +234,7 @@ class CacheActivationsRunner:
             "_split": None,
         }
 
-        # fingerprint is generated from dataset.__getstate__ (not includeing _fingerprint)
+        # fingerprint is generated from dataset.__getstate__ (not including _fingerprint)
         with open(output_dir / "state.json", "w") as f:
             json.dump(new_state, f, indent=2)
 
@@ -299,6 +299,22 @@ class CacheActivationsRunner:
         if self.cfg.shuffle:
             logger.info("Shuffling...")
             dataset = dataset.shuffle(seed=self.cfg.seed)
+            # Save the shuffled dataset back to disk
+            # We need to save to a temp location first since datasets can't overwrite themselves
+            shuffled_path = final_cached_activation_path / ".shuffled"
+            dataset.save_to_disk(str(shuffled_path))
+            # Remove old unshuffled data and replace with shuffled
+            for item in final_cached_activation_path.iterdir():
+                if item.name != ".shuffled":
+                    if item.is_dir():
+                        shutil.rmtree(item)
+                    else:
+                        item.unlink()
+            for item in shuffled_path.iterdir():
+                shutil.move(str(item), str(final_cached_activation_path / item.name))
+            shuffled_path.rmdir()
+            # Reload the dataset from the new location
+            dataset = Dataset.load_from_disk(str(final_cached_activation_path))
 
         if self.cfg.hf_repo_id:
             logger.info("Pushing to Huggingface Hub...")
