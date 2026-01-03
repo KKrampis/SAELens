@@ -498,7 +498,6 @@ class CacheActivationsRunnerConfig:
         dataset_trust_remote_code (bool): Whether to trust remote code when loading datasets from Huggingface.
         disable_concat_sequences (bool): Whether to disable concatenating sequences and ignore sequences shorter than the context size. If True, disables concatenating and ignores short sequences.
         sequence_separator_token (int | Literal["bos", "eos", "sep"] | None): If not `None`, this token will be placed between sentences in a batch to act as a separator. By default, this is the `<bos>` token.
-        exclude_special_tokens (bool | list[int]): Whether to exclude special tokens from the activations. If True, excludes all special tokens. If a list of ints, excludes those token IDs.
     """
 
     dataset_path: str
@@ -540,7 +539,6 @@ class CacheActivationsRunnerConfig:
     sequence_separator_token: int | Literal["bos", "eos", "sep"] | None = (
         special_token_field(default="bos")
     )
-    exclude_special_tokens: bool | list[int] = False
 
     def __post_init__(self):
         # Automatically determine context_size if dataset is tokenized
@@ -569,11 +567,6 @@ class CacheActivationsRunnerConfig:
             self.new_cached_activations_path = _default_cached_activations_path(  # type: ignore
                 self.dataset_path, self.model_name, self.hook_name, None
             )
-
-        if isinstance(self.exclude_special_tokens, list) and not all(
-            isinstance(x, int) for x in self.exclude_special_tokens
-        ):
-            raise ValueError("exclude_special_tokens list must contain only integers")
 
     @property
     def sliced_context_size(self) -> int:
