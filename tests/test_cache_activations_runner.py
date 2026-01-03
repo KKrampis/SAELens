@@ -521,3 +521,153 @@ def test_cache_activations_runner_shuffled_saved_to_disk(tmp_path: Path):
     assert np.array_equal(
         shuffled_acts_on_disk, returned_acts
     ), "Activations on disk should match returned activations"
+
+
+def test_cache_activations_runner_shuffle_across_sequences(tmp_path: Path):
+    """Test that shuffle_across_sequences shuffles individual activations across all sequence positions."""
+    # Create test dataset with unique tokens
+    tokenizer = HookedTransformer.from_pretrained("gelu-1l").tokenizer
+    text = "".join(
+        [
+            " " + word[1:]
+            for word in tokenizer.vocab  # type: ignore
+            if word[0] == "Ġ" and word[1:].isascii() and word.isalnum()
+        ]
+    )
+    dataset = Dataset.from_list([{"text": text}])
+
+    # Create configs for unshuffled and shuffle_across_sequences versions
+    base_cfg = _default_cfg(
+        tmp_path / "base",
+        context_size=4,
+        batch_size=2,
+        dataset_num_rows=8,
+        shuffle=False,
+        shuffle_across_sequences=False,
+    )
+    shuffle_across_cfg = _default_cfg(
+        tmp_path / "shuffle_across",
+        context_size=4,
+        batch_size=2,
+        dataset_num_rows=8,
+        shuffle=True,  # Required when shuffle_across_sequences=True
+        shuffle_across_sequences=True,
+    )
+
+    # Get unshuffled dataset
+    unshuffled_runner = CacheActivationsRunner(base_cfg, override_dataset=dataset)
+    unshuffled_ds = unshuffled_runner.run()
+    unshuffled_ds.set_format("torch")
+
+    # Get shuffle_across_sequences dataset
+    shuffled_runner = CacheActivationsRunner(shuffle_across_cfg, override_dataset=dataset)
+    shuffled_ds = shuffled_runner.run()
+    shuffled_ds.set_format("torch")
+
+    # Get activations and tokens
+    hook_name = base_cfg.hook_name
+    unshuffled_acts: torch.Tensor = unshuffled_ds[hook_name]  # type: ignore
+    unshuffled_tokens: torch.Tensor = unshuffled_ds["token_ids"]  # type: ignore
+    shuffled_acts: torch.Tensor = shuffled_ds[hook_name]  # type: ignore
+    shuffled_tokens: torch.Tensor = shuffled_ds["token_ids"]  # type: ignore
+
+    # Convert to numpy for easier manipulation
+    unshuffled_acts_np = np.array(unshuffled_acts)
+    unshuffled_tokens_np = np.array(unshuffled_tokens)
+    shuffled_acts_np = np.array(shuffled_acts)
+    shuffled_tokens_np = np.array(shuffled_tokens)
+
+    # Verify shapes are preserved
+    assert unshuffled_acts_np.shape == shuffled_acts_np.shape
+    assert unshuffled_tokens_np.shape == shuffled_tokens_np.shape
+
+    # Flatten to compare individual activations
+    unshuffled_acts_flat = unshuffled_acts_np.reshape(-1, unshuffled_acts_np.shape[-1])
+    unshuffled_tokens_flat = unshuffled_tokens_np.reshape(-1)
+    shuffled_acts_flat = shuffled_acts_np.reshape(-1, shuffled_acts_np.shape[-1])
+    shuffled_tokens_flat = shuffled_tokens_np.reshape(-1)
+
+    # Verify data is actually shuffled (activations should be in different positions)
+    assert not np.array_equal(unshuffled_acts_flat, shuffled_acts_flat)
+    assert not np.array_equal(unshuffled_tokens_flat, shuffled_tokens_flat)
+
+    # Verify token-activation pairs remain aligned after shuffling
+    # For each unique token in unshuffled, find its activation and verify
+    # the same token has the same activation in shuffled
+    for i in range(len(unshuffled_tokens_flat)):
+        token = unshuffled_tokens_flat[i]
+        act = unshuffled_acts_flat[i]
+        # Find where this token is in the shuffled version
+        shuffled_indices = np.where(shuffled_tokens_flat == token)[0]
+        # At least one of these positions should have the matching activation
+        found_match = False
+        for idx in shuffled_indices:
+            if np.allclose(act, shuffled_acts_flat[idx], rtol=1e-5, atol=1e-5):
+                found_match = True
+                break
+        assert found_match, f"Token {token} at position {i} lost its paired activation"
+
+
+def test_cache_activations_runner_shuffle_across_sequences_reproducible(tmp_path: Path):
+    """Test that shuffle_across_sequences is reproducible with the same seed."""
+    tokenizer = HookedTransformer.from_pretrained("gelu-1l").tokenizer
+    text = "".join(
+        [
+            " " + word[1:]
+            for word in tokenizer.vocab  # type: ignore
+            if word[0] == "Ġ" and word[1:].isascii() and word.isalnum()
+        ]
+    )
+    dataset = Dataset.from_list([{"text": text}])
+
+    # Create two configs with the same seed (default is 42)
+    cfg1 = _default_cfg(
+        tmp_path / "run1",
+        context_size=4,
+        batch_size=2,
+        dataset_num_rows=8,
+        shuffle=True,  # Required when shuffle_across_sequences=True
+        shuffle_across_sequences=True,
+    )
+    cfg2 = _default_cfg(
+        tmp_path / "run2",
+        context_size=4,
+        batch_size=2,
+        dataset_num_rows=8,
+        shuffle=True,  # Required when shuffle_across_sequences=True
+        shuffle_across_sequences=True,
+    )
+
+    # Run both
+    runner1 = CacheActivationsRunner(cfg1, override_dataset=dataset)
+    ds1 = runner1.run()
+    ds1.set_format("torch")
+
+    runner2 = CacheActivationsRunner(cfg2, override_dataset=dataset)
+    ds2 = runner2.run()
+    ds2.set_format("torch")
+
+    # Results should be identical
+    hook_name = cfg1.hook_name
+    acts1 = np.array(ds1[hook_name])
+    acts2 = np.array(ds2[hook_name])
+    tokens1 = np.array(ds1["token_ids"])
+    tokens2 = np.array(ds2["token_ids"])
+
+    assert np.array_equal(acts1, acts2), "Same seed should produce identical activations"
+    assert np.array_equal(tokens1, tokens2), "Same seed should produce identical tokens"
+
+
+def test_cache_activations_runner_shuffle_across_sequences_requires_shuffle(
+    tmp_path: Path,
+):
+    """Test that shuffle_across_sequences=True requires shuffle=True."""
+    with pytest.raises(
+        ValueError,
+        match="shuffle_across_sequences=True requires shuffle=True",
+    ):
+        _default_cfg(
+            tmp_path,
+            shuffle=False,
+            shuffle_across_sequences=True,
+        )

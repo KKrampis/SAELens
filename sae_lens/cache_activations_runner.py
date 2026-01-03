@@ -88,6 +88,8 @@ class CacheActivationsRunner:
             Value(dtype="int32"), length=self.context_size
         )
         self.features = Features(features_dict)
+        # Generator for reproducible shuffling across sequences
+        self._shuffle_generator = torch.Generator().manual_seed(self.cfg.seed)
 
     def __str__(self):
         """
@@ -344,6 +346,16 @@ class CacheActivationsRunner:
     ) -> Dataset:
         hook_names = [self.cfg.hook_name]
         acts, token_ids = buffer
+
+        # Shuffle across sequences if enabled - this shuffles individual activation
+        # positions across all sequences, keeping token_ids paired with activations
+        if self.cfg.shuffle_across_sequences:
+            n_activations = acts.shape[0]
+            perm = torch.randperm(n_activations, generator=self._shuffle_generator)
+            acts = acts[perm]
+            if token_ids is not None:
+                token_ids = token_ids[perm]
+
         acts = einops.rearrange(
             acts,
             "(bs context_size) d_in -> bs context_size d_in",

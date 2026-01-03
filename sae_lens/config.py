@@ -478,7 +478,8 @@ class CacheActivationsRunnerConfig:
         context_size (int): Context size to process. Can be left as -1 if the dataset is tokenized.
         model_class_name (str): The name of the class of the model to use. This should be either `HookedTransformer` or `HookedMamba`.
         new_cached_activations_path (str, optional): The path to save the activations.
-        shuffle (bool): Whether to shuffle the dataset.
+        shuffle (bool): Whether to shuffle the dataset at the sequence level.
+        shuffle_across_sequences (bool): Whether to shuffle individual activations across all sequence positions within each buffer. This treats the buffer as a flat 2D array and shuffles activation positions while keeping token_ids paired with their activations.
         seed (int): The seed to use for shuffling.
         dtype (str): Datatype of activations to be stored.
         device (str): The device for the model.
@@ -512,6 +513,7 @@ class CacheActivationsRunnerConfig:
     # defaults to "activations/{dataset}/{model}/{hook_name}
     new_cached_activations_path: str | None = None
     shuffle: bool = True
+    shuffle_across_sequences: bool = False
     seed: int = 42
     dtype: str = "float32"
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -566,6 +568,12 @@ class CacheActivationsRunnerConfig:
         if self.new_cached_activations_path is None:
             self.new_cached_activations_path = _default_cached_activations_path(  # type: ignore
                 self.dataset_path, self.model_name, self.hook_name, None
+            )
+
+        if self.shuffle_across_sequences and not self.shuffle:
+            raise ValueError(
+                "shuffle_across_sequences=True requires shuffle=True. "
+                "Set shuffle=True to enable shuffling across sequences."
             )
 
     @property
