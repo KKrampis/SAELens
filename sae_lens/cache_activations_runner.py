@@ -18,6 +18,11 @@ from sae_lens.load_model import load_model
 from sae_lens.training.activations_store import ActivationsStore
 from sae_lens.util import str_to_dtype
 
+# Directory names for temporary operations during caching
+_TMP_SHARDS_DIR = ".tmp_shards"
+_SHUFFLED_DIR = ".shuffled"
+_BACKUP_SUFFIX = ".backup"
+
 
 def _mk_activations_store(
     model: HookedRootModule,
@@ -181,10 +186,10 @@ class CacheActivationsRunner:
                 f"output_dir is not an existing directory: {output_dir}"
             )
 
-        other_items = [p for p in output_dir.iterdir() if p.name != ".tmp_shards"]
+        other_items = [p for p in output_dir.iterdir() if p.name != _TMP_SHARDS_DIR]
         if other_items:
             raise FileExistsError(
-                f"output_dir must be empty (besides .tmp_shards). Found: {other_items}"
+                f"output_dir must be empty (besides {_TMP_SHARDS_DIR}). Found: {other_items}"
             )
 
         if not (source_dir / first_shard_dir_name).exists():
@@ -259,7 +264,7 @@ class CacheActivationsRunner:
                 f"Activations directory ({final_cached_activation_path}) is not empty. Please delete it or specify a different path. Exiting the script to prevent accidental deletion of files."
             )
 
-        tmp_cached_activation_path = final_cached_activation_path / ".tmp_shards/"
+        tmp_cached_activation_path = final_cached_activation_path / _TMP_SHARDS_DIR
         tmp_cached_activation_path.mkdir(exist_ok=False, parents=False)
 
         ### Create temporary sharded datasets
@@ -291,22 +296,34 @@ class CacheActivationsRunner:
         if self.cfg.shuffle:
             logger.info("Shuffling...")
             dataset = dataset.shuffle(seed=self.cfg.seed)
-            # Save the shuffled dataset back to disk
-            # We need to save to a temp location first since datasets can't overwrite themselves
-            shuffled_path = final_cached_activation_path / ".shuffled"
+            # Save the shuffled dataset back to disk using atomic rename with backup
+            # to prevent data loss if the process crashes mid-operation.
+            # Note: shuffled_path must be a sibling (not child) of final_cached_activation_path
+            # so that renaming the parent doesn't invalidate the shuffled path.
+            shuffled_path = final_cached_activation_path.parent / (
+                final_cached_activation_path.name + _SHUFFLED_DIR
+            )
+            backup_path = final_cached_activation_path.parent / (
+                final_cached_activation_path.name + _BACKUP_SUFFIX
+            )
+
             dataset.save_to_disk(str(shuffled_path))
-            # Remove old unshuffled data and replace with shuffled
-            # Only remove known dataset files (from _consolidate_shards output)
-            for item in final_cached_activation_path.iterdir():
-                is_arrow_file = (
-                    item.name.startswith("data-") and item.suffix == ".arrow"
-                )
-                is_dataset_metadata = item.name in ("dataset_info.json", "state.json")
-                if is_arrow_file or is_dataset_metadata:
-                    item.unlink()
-            for item in shuffled_path.iterdir():
-                shutil.move(str(item), str(final_cached_activation_path / item.name))
-            shuffled_path.rmdir()
+
+            # Atomic swap: rename original to backup, then shuffled to original
+            try:
+                final_cached_activation_path.rename(backup_path)
+                shuffled_path.rename(final_cached_activation_path)
+                # Success - remove backup
+                shutil.rmtree(backup_path)
+            except Exception:
+                # Rollback: restore from backup if it exists
+                if backup_path.exists() and not final_cached_activation_path.exists():
+                    backup_path.rename(final_cached_activation_path)
+                # Clean up shuffled path if it still exists
+                if shuffled_path.exists():
+                    shutil.rmtree(shuffled_path)
+                raise
+
             # Reload the dataset from the new location
             dataset = Dataset.load_from_disk(str(final_cached_activation_path))
 
