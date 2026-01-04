@@ -93,8 +93,6 @@ class CacheActivationsRunner:
             Value(dtype="int32"), length=self.context_size
         )
         self.features = Features(features_dict)
-        # Generator for reproducible shuffling across sequences
-        self._shuffle_generator = torch.Generator().manual_seed(self.cfg.seed)
 
     def __str__(self):
         """
@@ -294,8 +292,63 @@ class CacheActivationsRunner:
         )
 
         if self.cfg.shuffle:
-            logger.info("Shuffling...")
-            dataset = dataset.shuffle(seed=self.cfg.seed)
+            # shuffle_across_sequences: shuffle individual activations globally,
+            # treating the entire dataset as a flat array of (total_tokens, d_in).
+            # This breaks up sequential patterns within sequences while keeping
+            # token_ids paired with their corresponding activations.
+            if self.cfg.shuffle_across_sequences:
+                logger.info("Shuffling across sequences...")
+                dataset.set_format("torch")
+                hook_name = self.cfg.hook_name
+
+                # Load all data and flatten
+                # With torch format, [:] returns tensors directly
+                all_data = dataset[:]
+                acts = all_data[hook_name]  # (n_seq, context_size, d_in)
+                token_ids = all_data["token_ids"]  # (n_seq, context_size)
+                n_seq = acts.shape[0]
+
+                acts_flat = einops.rearrange(
+                    acts, "n_seq context_size d_in -> (n_seq context_size) d_in"
+                )
+                token_ids_flat = einops.rearrange(
+                    token_ids, "n_seq context_size -> (n_seq context_size)"
+                )
+
+                # Shuffle globally with the same permutation for both
+                generator = torch.Generator().manual_seed(self.cfg.seed)
+                perm = torch.randperm(acts_flat.shape[0], generator=generator)
+                acts_flat = acts_flat[perm]
+                token_ids_flat = token_ids_flat[perm]
+
+                # Reshape back to sequences
+                acts_shuffled = einops.rearrange(
+                    acts_flat,
+                    "(n_seq context_size) d_in -> n_seq context_size d_in",
+                    n_seq=n_seq,
+                    context_size=self.context_size,
+                )
+                token_ids_shuffled = einops.rearrange(
+                    token_ids_flat,
+                    "(n_seq context_size) -> n_seq context_size",
+                    n_seq=n_seq,
+                    context_size=self.context_size,
+                )
+
+                # Create new dataset from shuffled data
+                dataset = Dataset.from_dict(
+                    {
+                        hook_name: acts_shuffled,
+                        "token_ids": token_ids_shuffled.to(torch.int32),
+                    },
+                    features=self.features,
+                )
+            else:
+                # Sequence-level shuffle only: shuffle the order of sequences (rows)
+                # Skip if shuffle_across_sequences was used since global shuffle is stronger
+                logger.info("Shuffling sequences...")
+                dataset = dataset.shuffle(seed=self.cfg.seed)
+
             # Save the shuffled dataset back to disk using atomic rename with backup
             # to prevent data loss if the process crashes mid-operation.
             # Note: shuffled_path must be a sibling (not child) of final_cached_activation_path
@@ -363,15 +416,6 @@ class CacheActivationsRunner:
     ) -> Dataset:
         hook_names = [self.cfg.hook_name]
         acts, token_ids = buffer
-
-        # Shuffle across sequences if enabled - this shuffles individual activation
-        # positions across all sequences, keeping token_ids paired with activations
-        if self.cfg.shuffle_across_sequences:
-            n_activations = acts.shape[0]
-            perm = torch.randperm(n_activations, generator=self._shuffle_generator)
-            acts = acts[perm]
-            if token_ids is not None:
-                token_ids = token_ids[perm]
 
         acts = einops.rearrange(
             acts,
