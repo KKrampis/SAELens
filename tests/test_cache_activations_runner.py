@@ -560,7 +560,9 @@ def test_cache_activations_runner_shuffle_across_sequences(tmp_path: Path):
     unshuffled_ds.set_format("torch")
 
     # Get shuffle_across_sequences dataset
-    shuffled_runner = CacheActivationsRunner(shuffle_across_cfg, override_dataset=dataset)
+    shuffled_runner = CacheActivationsRunner(
+        shuffle_across_cfg, override_dataset=dataset
+    )
     shuffled_ds = shuffled_runner.run()
     shuffled_ds.set_format("torch")
 
@@ -654,7 +656,9 @@ def test_cache_activations_runner_shuffle_across_sequences_reproducible(tmp_path
     tokens1 = np.array(ds1["token_ids"])
     tokens2 = np.array(ds2["token_ids"])
 
-    assert np.array_equal(acts1, acts2), "Same seed should produce identical activations"
+    assert np.array_equal(
+        acts1, acts2
+    ), "Same seed should produce identical activations"
     assert np.array_equal(tokens1, tokens2), "Same seed should produce identical tokens"
 
 
