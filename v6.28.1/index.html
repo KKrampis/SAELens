@@ -16,7 +16,7 @@
       
       
       
-        <link rel="next" href="roadmap/">
+        <link rel="next" href="usage/">
       
       
         
@@ -383,6 +383,23 @@
   
 </li>
         
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model Compatibility
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Model Compatibility">
+      <ul class="md-nav__list">
+        
           <li class="md-nav__item">
   <a href="#background-and-further-readings" class="md-nav__link">
     <span class="md-ellipsis">
@@ -447,14 +464,14 @@
   
   
     <li class="md-nav__item">
-      <a href="roadmap/" class="md-nav__link">
+      <a href="usage/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
-    Roadmap
+    Usage
   
 
     
@@ -792,6 +809,23 @@
   
 </li>
         
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#model-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Model Compatibility
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Model Compatibility">
+      <ul class="md-nav__list">
+        
           <li class="md-nav__item">
   <a href="#background-and-further-readings" class="md-nav__link">
     <span class="md-ellipsis">
@@ -910,11 +944,35 @@
 </span></code></pre></div>
 <h3 id="importing-saes-from-other-libraries">Importing SAEs from other libraries</h3>
 <p>You can import an SAE created with another library by writing a custom <code>PretrainedSaeHuggingfaceLoader</code> or <code>PretrainedSaeDiskLoader</code> for use with <code>SAE.from_pretrained()</code> or <code>SAE.load_from_disk()</code>, respectively. See the <a href="https://github.com/decoderesearch/SAELens/blob/main/sae_lens/loading/pretrained_sae_loaders.py">pretrained_sae_loaders.py</a> file for more details, or ask on the <a href="https://join.slack.com/t/opensourcemechanistic/shared_invite/zt-375zalm04-GFd5tdBU1yLKlu_T_JSqZQ">Open Source Mechanistic Interpretability Slack</a>. If you write a good custom loader for another library, please consider contributing it back to SAELens!</p>
+<h2 id="model-compatibility">Model Compatibility</h2>
+<p>SAELens SAEs are standard PyTorch modules and work with any framework or model architecture, not just TransformerLens. While SAELens provides deep integration with TransformerLens through <code>HookedSAETransformer</code>, you can use SAEs with:</p>
+<ul>
+<li><strong>Hugging Face Transformers</strong>: Extract activations using PyTorch hooks and pass them to <code>sae.encode()</code> / <code>sae.decode()</code></li>
+<li><strong>nnsight</strong>: Use nnsight's tracing API for clean intervention patterns with SAE features</li>
+<li><strong>Any PyTorch model</strong>: SAEs work on any tensor with the correct input dimension</li>
+</ul>
+<p>The core SAE methods (<code>encode</code>, <code>decode</code>, <code>forward</code>) accept standard PyTorch tensors, making them compatible with any activation extraction method.</p>
+<div class="highlight"><pre><span></span><code><span id="__span-3-1"><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+</span><span id="__span-3-2"><a href="#__codelineno-3-2" id="__codelineno-3-2" name="__codelineno-3-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sae_lens</span><span class="w"> </span><span class="kn">import</span> <span class="n">SAE</span>
+</span><span id="__span-3-3"><a href="#__codelineno-3-3" id="__codelineno-3-3" name="__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a href="#__codelineno-3-4" id="__codelineno-3-4" name="__codelineno-3-4"></a><span class="n">sae</span> <span class="o">=</span> <span class="n">SAE</span><span class="o">.</span><span class="n">from_pretrained</span><span class="p">(</span>
+</span><span id="__span-3-5"><a href="#__codelineno-3-5" id="__codelineno-3-5" name="__codelineno-3-5"></a>    <span class="n">release</span><span class="o">=</span><span class="s2">"gemma-scope-2b-pt-res-canonical"</span><span class="p">,</span>
+</span><span id="__span-3-6"><a href="#__codelineno-3-6" id="__codelineno-3-6" name="__codelineno-3-6"></a>    <span class="n">sae_id</span><span class="o">=</span><span class="s2">"layer_12/width_16k/canonical"</span><span class="p">,</span>
+</span><span id="__span-3-7"><a href="#__codelineno-3-7" id="__codelineno-3-7" name="__codelineno-3-7"></a>    <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span>
+</span><span id="__span-3-8"><a href="#__codelineno-3-8" id="__codelineno-3-8" name="__codelineno-3-8"></a><span class="p">)</span>
+</span><span id="__span-3-9"><a href="#__codelineno-3-9" id="__codelineno-3-9" name="__codelineno-3-9"></a>
+</span><span id="__span-3-10"><a href="#__codelineno-3-10" id="__codelineno-3-10" name="__codelineno-3-10"></a><span class="c1"># SAEs work with any activation tensor of the right shape</span>
+</span><span id="__span-3-11"><a href="#__codelineno-3-11" id="__codelineno-3-11" name="__codelineno-3-11"></a><span class="c1"># Gemma 2 2B has d_model=2304</span>
+</span><span id="__span-3-12"><a href="#__codelineno-3-12" id="__codelineno-3-12" name="__codelineno-3-12"></a><span class="n">activations</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">128</span><span class="p">,</span> <span class="mi">2304</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="s2">"cuda"</span><span class="p">)</span>  <span class="c1"># From any source</span>
+</span><span id="__span-3-13"><a href="#__codelineno-3-13" id="__codelineno-3-13" name="__codelineno-3-13"></a><span class="n">features</span> <span class="o">=</span> <span class="n">sae</span><span class="o">.</span><span class="n">encode</span><span class="p">(</span><span class="n">activations</span><span class="p">)</span>
+</span><span id="__span-3-14"><a href="#__codelineno-3-14" id="__codelineno-3-14" name="__codelineno-3-14"></a><span class="n">reconstructed</span> <span class="o">=</span> <span class="n">sae</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">features</span><span class="p">)</span>
+</span></code></pre></div>
+<p>For detailed examples including Hugging Face and nnsight integration, see the <a href="usage/">Usage Guide</a>.</p>
 <h3 id="background-and-further-readings">Background and further Readings</h3>
 <p>We highly recommend this <a href="https://www.lesswrong.com/posts/LnHowHgmrMbWtpkxx/intro-to-superposition-and-sparse-autoencoders-colab">tutorial</a>.</p>
 <p>For recent progress in SAEs, we recommend the LessWrong forum's <a href="https://www.lesswrong.com/tag/sparse-autoencoders-saes">Sparse Autoencoder tag</a></p>
 <h2 id="tutorials">Tutorials</h2>
-<p>I wrote a tutorial to show users how to do some basic exploration of their SAE:</p>
+<p>Below are some tutorials that show how to do some basic exploration of SAEs:</p>
 <ul>
 <li>Loading and Analysing Pre-Trained Sparse Autoencoders <a href="https://githubtocolab.com/decoderesearch/SAELens/blob/main/tutorials/basic_loading_and_analysing.ipynb"><img alt="Open In Colab" src="https://colab.research.google.com/assets/colab-badge.svg"/></a></li>
 <li>Understanding SAE Features with the Logit Lens <a href="https://githubtocolab.com/decoderesearch/SAELens/blob/main/tutorials/logits_lens_with_features.ipynb"><img alt="Open In Colab" src="https://colab.research.google.com/assets/colab-badge.svg"/></a></li>
@@ -924,12 +982,12 @@
 <p>WandB Dashboards provide lots of useful insights while training SAEs. Here's a screenshot from one training run.</p>
 <p><img alt="screenshot" src="dashboard_screenshot.png"/></p>
 <h2 id="citation">Citation</h2>
-<div class="highlight"><pre><span></span><code><span id="__span-3-1"><a href="#__codelineno-3-1" id="__codelineno-3-1" name="__codelineno-3-1"></a>@misc{bloom2024saetrainingcodebase,
-</span><span id="__span-3-2"><a href="#__codelineno-3-2" id="__codelineno-3-2" name="__codelineno-3-2"></a>   title = {SAELens},
-</span><span id="__span-3-3"><a href="#__codelineno-3-3" id="__codelineno-3-3" name="__codelineno-3-3"></a>   author = {Bloom, Joseph and Tigges, Curt and Duong, Anthony and Chanin, David},
-</span><span id="__span-3-4"><a href="#__codelineno-3-4" id="__codelineno-3-4" name="__codelineno-3-4"></a>   year = {2024},
-</span><span id="__span-3-5"><a href="#__codelineno-3-5" id="__codelineno-3-5" name="__codelineno-3-5"></a>   howpublished = {\url{https://github.com/decoderesearch/SAELens}},
-</span><span id="__span-3-6"><a href="#__codelineno-3-6" id="__codelineno-3-6" name="__codelineno-3-6"></a>}}
+<div class="highlight"><pre><span></span><code><span id="__span-4-1"><a href="#__codelineno-4-1" id="__codelineno-4-1" name="__codelineno-4-1"></a>@misc{bloom2024saetrainingcodebase,
+</span><span id="__span-4-2"><a href="#__codelineno-4-2" id="__codelineno-4-2" name="__codelineno-4-2"></a>   title = {SAELens},
+</span><span id="__span-4-3"><a href="#__codelineno-4-3" id="__codelineno-4-3" name="__codelineno-4-3"></a>   author = {Bloom, Joseph and Tigges, Curt and Duong, Anthony and Chanin, David},
+</span><span id="__span-4-4"><a href="#__codelineno-4-4" id="__codelineno-4-4" name="__codelineno-4-4"></a>   year = {2024},
+</span><span id="__span-4-5"><a href="#__codelineno-4-5" id="__codelineno-4-5" name="__codelineno-4-5"></a>   howpublished = {\url{https://github.com/decoderesearch/SAELens}},
+</span><span id="__span-4-6"><a href="#__codelineno-4-6" id="__codelineno-4-6" name="__codelineno-4-6"></a>}}
 </span></code></pre></div>
 
 
