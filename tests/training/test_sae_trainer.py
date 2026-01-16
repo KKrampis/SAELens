@@ -16,7 +16,9 @@ from sae_lens.llm_sae_training_runner import (
 from sae_lens.saes.sae import TrainingSAE
 from sae_lens.saes.standard_sae import StandardTrainingSAE, StandardTrainingSAEConfig
 from sae_lens.training.activations_store import ActivationsStore
+from sae_lens.config import LoggingConfig, SAETrainerConfig
 from sae_lens.training.sae_trainer import (
+    PerSAETrainerState,
     SAETrainer,
     TrainStepOutput,
     _log_feature_sparsity,
@@ -588,3 +590,216 @@ def test_SAETrainer_save_and_load_from_checkpoint(
             assert torch.allclose(old_state[key], new_state[key])
         else:
             assert old_state[key] == new_state[key]
+
+
+def test_multi_sae_training_matches_serial_training():
+    """
+    Test that training SAEs in multi-SAE mode produces identical results to training
+    them serially, given the same initial weights and training data.
+    """
+    d_in = 32
+    d_sae = 16
+    batch_size = 64
+    num_batches = 20
+    total_samples = batch_size * num_batches
+
+    # Create fixed training data
+    fixed_data = [torch.randn(batch_size, d_in) for _ in range(num_batches)]
+
+    # Create config
+    cfg = SAETrainerConfig(
+        total_training_samples=total_samples,
+        train_batch_size_samples=batch_size,
+        lr=1e-3,
+        feature_sampling_window=num_batches + 10,  # Don't reset during training
+        dead_feature_window=num_batches + 10,
+        logger=LoggingConfig(log_to_wandb=False),
+    )
+
+    # Create base SAE config
+    sae_cfg = StandardTrainingSAEConfig(d_in=d_in, d_sae=d_sae)
+
+    # Create first SAE and save its initial state
+    sae_base = StandardTrainingSAE.from_dict(sae_cfg.to_dict())
+    initial_state_dict = {k: v.clone() for k, v in sae_base.state_dict().items()}
+
+    # Create 4 SAEs with identical initial weights
+    sae1 = StandardTrainingSAE.from_dict(sae_cfg.to_dict())
+    sae1.load_state_dict({k: v.clone() for k, v in initial_state_dict.items()})
+
+    sae2 = StandardTrainingSAE.from_dict(sae_cfg.to_dict())
+    sae2.load_state_dict({k: v.clone() for k, v in initial_state_dict.items()})
+
+    sae3 = StandardTrainingSAE.from_dict(sae_cfg.to_dict())
+    sae3.load_state_dict({k: v.clone() for k, v in initial_state_dict.items()})
+
+    sae4 = StandardTrainingSAE.from_dict(sae_cfg.to_dict())
+    sae4.load_state_dict({k: v.clone() for k, v in initial_state_dict.items()})
+
+    # Verify initial weights are identical
+    for key in initial_state_dict:
+        assert torch.allclose(sae1.state_dict()[key], sae2.state_dict()[key])
+        assert torch.allclose(sae1.state_dict()[key], sae3.state_dict()[key])
+        assert torch.allclose(sae1.state_dict()[key], sae4.state_dict()[key])
+
+    # Train sae1 serially
+    trainer1 = SAETrainer(
+        cfg=cfg,
+        sae=sae1,
+        data_provider=iter([d.clone() for d in fixed_data]),
+    )
+    trained_sae1 = trainer1.fit()
+
+    # Train sae2 serially
+    trainer2 = SAETrainer(
+        cfg=cfg,
+        sae=sae2,
+        data_provider=iter([d.clone() for d in fixed_data]),
+    )
+    trained_sae2 = trainer2.fit()
+
+    # Train sae3 and sae4 together in multi-SAE mode
+    trainer_multi = SAETrainer(
+        cfg=cfg,
+        sae={"a": sae3, "b": sae4},
+        data_provider=iter([d.clone() for d in fixed_data]),
+    )
+    trained_saes = trainer_multi.fit()
+
+    assert isinstance(trained_saes, dict)
+    assert set(trained_saes.keys()) == {"a", "b"}
+
+    # Assert weights match between serial and multi-SAE training
+    for key in trained_sae1.state_dict():
+        # Serial SAE 1 should match multi-SAE "a"
+        assert torch.allclose(
+            trained_sae1.state_dict()[key],
+            trained_saes["a"].state_dict()[key],
+            rtol=1e-5,
+            atol=1e-5,
+        ), f"Mismatch for key {key} between serial sae1 and multi-SAE 'a'"
+
+        # Serial SAE 2 should match multi-SAE "b"
+        assert torch.allclose(
+            trained_sae2.state_dict()[key],
+            trained_saes["b"].state_dict()[key],
+            rtol=1e-5,
+            atol=1e-5,
+        ), f"Mismatch for key {key} between serial sae2 and multi-SAE 'b'"
+
+
+def test_multi_sae_trainer_basic_functionality():
+    """Test basic multi-SAE trainer functionality."""
+    d_in = 32
+    d_sae_1 = 16
+    d_sae_2 = 24  # Different d_sae to test heterogeneous SAEs
+    batch_size = 32
+    num_batches = 5
+    total_samples = batch_size * num_batches
+
+    fixed_data = [torch.randn(batch_size, d_in) for _ in range(num_batches)]
+
+    cfg = SAETrainerConfig(
+        total_training_samples=total_samples,
+        train_batch_size_samples=batch_size,
+        lr=1e-3,
+        feature_sampling_window=num_batches + 10,
+        dead_feature_window=num_batches + 10,
+        logger=LoggingConfig(log_to_wandb=False),
+    )
+
+    # Create SAEs with different d_sae values
+    sae1 = StandardTrainingSAE.from_dict(
+        StandardTrainingSAEConfig(d_in=d_in, d_sae=d_sae_1).to_dict()
+    )
+    sae2 = StandardTrainingSAE.from_dict(
+        StandardTrainingSAEConfig(d_in=d_in, d_sae=d_sae_2).to_dict()
+    )
+
+    # Create multi-SAE trainer
+    trainer = SAETrainer(
+        cfg=cfg,
+        sae={"small": sae1, "large": sae2},
+        data_provider=iter(fixed_data),
+    )
+
+    # Test sae_keys property
+    assert set(trainer.sae_keys) == {"small", "large"}
+
+    # Test get_sae method
+    assert trainer.get_sae("small") is sae1
+    assert trainer.get_sae("large") is sae2
+
+    # Test get_state method
+    state_small = trainer.get_state("small")
+    assert isinstance(state_small, PerSAETrainerState)
+    assert state_small.sae is sae1
+
+    # Test that single-SAE properties raise errors in multi-SAE mode
+    with pytest.raises(ValueError, match="multi-SAE mode"):
+        _ = trainer.sae
+    with pytest.raises(ValueError, match="multi-SAE mode"):
+        _ = trainer.optimizer
+    with pytest.raises(ValueError, match="multi-SAE mode"):
+        _ = trainer.feature_sparsity
+
+    # Test training
+    result = trainer.fit()
+    assert isinstance(result, dict)
+    assert set(result.keys()) == {"small", "large"}
+    assert result["small"].cfg.d_sae == d_sae_1
+    assert result["large"].cfg.d_sae == d_sae_2
+
+
+def test_multi_sae_checkpoint_saves_per_sae_subdirs(tmp_path: Path):
+    """Test that multi-SAE checkpoints are saved in per-SAE subdirectories."""
+    d_in = 32
+    d_sae = 16
+    batch_size = 32
+    num_batches = 5
+    total_samples = batch_size * num_batches
+
+    fixed_data = [torch.randn(batch_size, d_in) for _ in range(num_batches)]
+
+    cfg = SAETrainerConfig(
+        total_training_samples=total_samples,
+        train_batch_size_samples=batch_size,
+        checkpoint_path=str(tmp_path / "checkpoints"),
+        save_final_checkpoint=True,
+        logger=LoggingConfig(log_to_wandb=False),
+    )
+
+    sae1 = StandardTrainingSAE.from_dict(
+        StandardTrainingSAEConfig(d_in=d_in, d_sae=d_sae).to_dict()
+    )
+    sae2 = StandardTrainingSAE.from_dict(
+        StandardTrainingSAEConfig(d_in=d_in, d_sae=d_sae).to_dict()
+    )
+
+    trainer = SAETrainer(
+        cfg=cfg,
+        sae={"sae_a": sae1, "sae_b": sae2},
+        data_provider=iter(fixed_data),
+    )
+    trainer.fit()
+
+    # Check checkpoint structure
+    checkpoint_dir = tmp_path / "checkpoints" / f"final_{total_samples}"
+    assert checkpoint_dir.exists()
+
+    # Each SAE should have its own subdirectory
+    assert (checkpoint_dir / "sae_a").exists()
+    assert (checkpoint_dir / "sae_b").exists()
+    assert (checkpoint_dir / "shared").exists()
+
+    # Check that each SAE dir has the expected files
+    for sae_key in ["sae_a", "sae_b"]:
+        sae_dir = checkpoint_dir / sae_key
+        assert (sae_dir / "sae_weights.safetensors").exists()
+        assert (sae_dir / "cfg.json").exists()
+        assert (sae_dir / "sparsity.safetensors").exists()
+        assert (sae_dir / "trainer_state.pt").exists()
+
+    # Check shared directory
+    assert (checkpoint_dir / "shared" / "activation_scaler.json").exists()
+    assert (checkpoint_dir / "shared" / "global_trainer_state.pt").exists()

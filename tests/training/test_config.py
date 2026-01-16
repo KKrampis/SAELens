@@ -5,6 +5,8 @@ import pytest
 from sae_lens.config import (
     CacheActivationsRunnerConfig,
     LanguageModelSAERunnerConfig,
+    LoggingConfig,
+    SAETrainerConfig,
     _default_cached_activations_path,
 )
 from sae_lens.saes.jumprelu_sae import JumpReLUTrainingSAEConfig
@@ -113,3 +115,84 @@ def test_LanguageModelSAERunnerConfig_errors_when_loading_from_dict_with_missing
         test_dict = cfg.to_dict()
         del test_dict["logger"]
         LanguageModelSAERunnerConfig.from_dict(test_dict)
+
+
+def test_sae_trainer_config_defaults_match_runner_config():
+    """
+    Test that SAETrainerConfig defaults match LanguageModelSAERunnerConfig defaults.
+
+    This ensures that when both configs use their default values, the resulting
+    SAETrainerConfig from to_sae_trainer_config() matches a directly constructed
+    SAETrainerConfig with defaults.
+    """
+    training_tokens = 100_000
+
+    # Create runner config with minimal required fields, relying on defaults
+    runner_cfg = LanguageModelSAERunnerConfig(
+        sae=StandardTrainingSAEConfig(d_in=64, d_sae=128),
+        training_tokens=training_tokens,
+        verbose=False,  # Suppress logging during test
+    )
+    trainer_cfg_from_runner = runner_cfg.to_sae_trainer_config()
+
+    # Create trainer config directly using defaults
+    trainer_cfg_direct = SAETrainerConfig(
+        total_training_samples=training_tokens,
+    )
+
+    # The checkpoint_path from runner has a unique ID appended in __post_init__,
+    # so we skip that field in the comparison
+    # Compare all fields that should have matching defaults
+    assert trainer_cfg_from_runner.lr == trainer_cfg_direct.lr
+    assert trainer_cfg_from_runner.lr_end == trainer_cfg_direct.lr_end
+    assert (
+        trainer_cfg_from_runner.lr_scheduler_name
+        == trainer_cfg_direct.lr_scheduler_name
+    )
+    assert (
+        trainer_cfg_from_runner.lr_warm_up_steps == trainer_cfg_direct.lr_warm_up_steps
+    )
+    assert trainer_cfg_from_runner.lr_decay_steps == trainer_cfg_direct.lr_decay_steps
+    assert (
+        trainer_cfg_from_runner.n_restart_cycles == trainer_cfg_direct.n_restart_cycles
+    )
+    assert trainer_cfg_from_runner.adam_beta1 == trainer_cfg_direct.adam_beta1
+    assert trainer_cfg_from_runner.adam_beta2 == trainer_cfg_direct.adam_beta2
+    assert (
+        trainer_cfg_from_runner.train_batch_size_samples
+        == trainer_cfg_direct.train_batch_size_samples
+    )
+    assert (
+        trainer_cfg_from_runner.dead_feature_window
+        == trainer_cfg_direct.dead_feature_window
+    )
+    assert (
+        trainer_cfg_from_runner.feature_sampling_window
+        == trainer_cfg_direct.feature_sampling_window
+    )
+    assert trainer_cfg_from_runner.n_checkpoints == trainer_cfg_direct.n_checkpoints
+    assert (
+        trainer_cfg_from_runner.save_final_checkpoint
+        == trainer_cfg_direct.save_final_checkpoint
+    )
+    assert trainer_cfg_from_runner.device == trainer_cfg_direct.device
+    assert trainer_cfg_from_runner.autocast == trainer_cfg_direct.autocast
+    assert (
+        trainer_cfg_from_runner.total_training_samples
+        == trainer_cfg_direct.total_training_samples
+    )
+
+    # Logger should have the same default structure (log_to_wandb=True, etc.)
+    assert type(trainer_cfg_from_runner.logger) == type(trainer_cfg_direct.logger)
+    assert (
+        trainer_cfg_from_runner.logger.log_to_wandb
+        == trainer_cfg_direct.logger.log_to_wandb
+    )
+    assert (
+        trainer_cfg_from_runner.logger.wandb_log_frequency
+        == trainer_cfg_direct.logger.wandb_log_frequency
+    )
+    assert (
+        trainer_cfg_from_runner.logger.eval_every_n_wandb_logs
+        == trainer_cfg_direct.logger.eval_every_n_wandb_logs
+    )

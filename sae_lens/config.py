@@ -442,10 +442,10 @@ class LanguageModelSAERunnerConfig(Generic[T_TRAINING_SAE_CONFIG]):
 
     def to_sae_trainer_config(self) -> "SAETrainerConfig":
         return SAETrainerConfig(
+            total_training_samples=self.total_training_tokens,
             n_checkpoints=self.n_checkpoints,
             checkpoint_path=self.checkpoint_path,
             save_final_checkpoint=self.save_final_checkpoint,
-            total_training_samples=self.total_training_tokens,
             device=self.device,
             autocast=self.autocast,
             lr=self.lr,
@@ -668,24 +668,56 @@ class PretokenizeRunnerConfig:
 
 @dataclass
 class SAETrainerConfig:
-    n_checkpoints: int
-    checkpoint_path: str | None
-    save_final_checkpoint: bool
+    """
+    Configuration for SAETrainer.
+
+    Args:
+        total_training_samples: Total number of samples to train on. Required.
+        n_checkpoints: Number of checkpoints to save during training.
+        checkpoint_path: Path to save checkpoints. Set to None to disable.
+        save_final_checkpoint: Whether to save a final checkpoint after training.
+        device: Device to train on (e.g., "cpu", "cuda").
+        autocast: Whether to use mixed-precision training.
+        lr: Learning rate.
+        lr_end: End learning rate for schedulers that decay. Defaults to lr/10.
+        lr_scheduler_name: Learning rate scheduler name.
+        lr_warm_up_steps: Number of warmup steps for the learning rate.
+        adam_beta1: Adam beta1 parameter.
+        adam_beta2: Adam beta2 parameter.
+        lr_decay_steps: Number of decay steps for the learning rate.
+        n_restart_cycles: Number of restart cycles for cosine annealing warm restarts.
+        train_batch_size_samples: Batch size in samples for training.
+        dead_feature_window: Window size for detecting dead features.
+        feature_sampling_window: Window size for feature sparsity sampling.
+        logger: Logging configuration.
+    """
+
+    # Required field (no default) - must be first
     total_training_samples: int
-    device: str
-    autocast: bool
-    lr: float
-    lr_end: float | None
-    lr_scheduler_name: str
-    lr_warm_up_steps: int
-    adam_beta1: float
-    adam_beta2: float
-    lr_decay_steps: int
-    n_restart_cycles: int
-    train_batch_size_samples: int
-    dead_feature_window: int
-    feature_sampling_window: int
-    logger: LoggingConfig
+
+    # Fields with defaults matching LanguageModelSAERunnerConfig
+    n_checkpoints: int = 0
+    checkpoint_path: str | None = "checkpoints"
+    save_final_checkpoint: bool = False
+    device: str = "cpu"
+    autocast: bool = False
+    lr: float = 3e-4
+    lr_end: float | None = None
+    lr_scheduler_name: str = "constant"
+    lr_warm_up_steps: int = 0
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.999
+    lr_decay_steps: int = 0
+    n_restart_cycles: int = 1
+    train_batch_size_samples: int = 4096
+    dead_feature_window: int = 1000
+    feature_sampling_window: int = 2000
+    logger: LoggingConfig = field(default_factory=LoggingConfig)
+
+    def __post_init__(self) -> None:
+        # Set lr_end to lr/10 if not specified, matching LanguageModelSAERunnerConfig behavior
+        if self.lr_end is None:
+            self.lr_end = self.lr / 10
 
     @property
     def total_training_steps(self) -> int:

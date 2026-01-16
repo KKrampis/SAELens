@@ -1,12 +1,14 @@
 import contextlib
 import math
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Generic, Protocol
+from typing import Any, Callable, Generic, Protocol, cast, overload
 
 import torch
 import wandb
 from safetensors.torch import save_file
 from torch.optim import Adam
+from torch.optim.lr_scheduler import LRScheduler
 from tqdm.auto import tqdm
 
 from sae_lens import __version__
@@ -53,16 +55,74 @@ class SaveCheckpointFn(Protocol):
 Evaluator = Callable[[T_TRAINING_SAE, DataProvider, ActivationScaler], dict[str, Any]]
 
 
+@dataclass
+class PerSAETrainerState(Generic[T_TRAINING_SAE]):
+    """
+    State maintained per-SAE during training.
+
+    This encapsulates all per-SAE state including the model, optimizer,
+    schedulers, and sparsity tracking metrics.
+    """
+
+    sae: T_TRAINING_SAE
+    optimizer: Adam
+    lr_scheduler: LRScheduler
+    coefficient_schedulers: dict[str, CoefficientScheduler]
+    grad_scaler: torch.amp.GradScaler
+
+    # Sparsity tracking
+    act_freq_scores: torch.Tensor
+    n_forward_passes_since_fired: torch.Tensor
+    n_frac_active_samples: int = 0
+
+    # Training state
+    started_fine_tuning: bool = False
+
+    def feature_sparsity(self) -> torch.Tensor:
+        if self.n_frac_active_samples == 0:
+            return torch.zeros_like(self.act_freq_scores)
+        return self.act_freq_scores / self.n_frac_active_samples
+
+    def log_feature_sparsity(self) -> torch.Tensor:
+        return _log_feature_sparsity(self.feature_sparsity())
+
+    def dead_neurons(self, dead_feature_window: int) -> torch.Tensor:
+        return (self.n_forward_passes_since_fired > dead_feature_window).bool()
+
+    def get_coefficients(self) -> dict[str, float]:
+        return {
+            name: scheduler.value
+            for name, scheduler in self.coefficient_schedulers.items()
+        }
+
+
 class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
     """
     Trainer for Sparse Autoencoder (SAE) models.
+
+    Supports training either a single SAE or multiple SAEs simultaneously
+    on the same training data. When multiple SAEs are provided as a dict,
+    each SAE is trained on the same batch of activations each step, which
+    is useful for hyperparameter sweeps.
+
+    Args:
+        cfg: Training configuration.
+        sae: Either a single SAE or a dict mapping names to SAEs.
+        data_provider: Iterator yielding training batches.
+        evaluator: Optional evaluation function.
+        save_checkpoint_fn: Optional custom checkpoint saving function.
     """
 
     data_provider: DataProvider
     activation_scaler: ActivationScaler
     evaluator: Evaluator[T_TRAINING_SAE] | None
-    coefficient_schedulers: dict[str, CoefficientScheduler]
 
+    # Internal state
+    _sae_states: dict[str, PerSAETrainerState[T_TRAINING_SAE]]
+    _input_was_single_sae: bool
+    _wandb_runs: dict[str, Any] | None  # wandb.Run objects for multi-SAE mode
+
+    @overload
     def __init__(
         self,
         cfg: SAETrainerConfig,
@@ -70,8 +130,26 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
         data_provider: DataProvider,
         evaluator: Evaluator[T_TRAINING_SAE] | None = None,
         save_checkpoint_fn: SaveCheckpointFn | None = None,
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self,
+        cfg: SAETrainerConfig,
+        sae: dict[str, T_TRAINING_SAE],
+        data_provider: DataProvider,
+        evaluator: Evaluator[T_TRAINING_SAE] | None = None,
+        save_checkpoint_fn: SaveCheckpointFn | None = None,
+    ) -> None: ...
+
+    def __init__(
+        self,
+        cfg: SAETrainerConfig,
+        sae: T_TRAINING_SAE | dict[str, T_TRAINING_SAE],
+        data_provider: DataProvider,
+        evaluator: Evaluator[T_TRAINING_SAE] | None = None,
+        save_checkpoint_fn: SaveCheckpointFn | None = None,
     ) -> None:
-        self.sae = sae
         self.data_provider = data_provider
         self.evaluator = evaluator
         self.activation_scaler = ActivationScaler()
@@ -80,11 +158,22 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
 
         self.n_training_steps: int = 0
         self.n_training_samples: int = 0
-        self.started_fine_tuning: bool = False
 
-        _update_sae_lens_training_version(self.sae)
+        # Normalize input to dict
+        if isinstance(sae, dict):
+            self._input_was_single_sae = False
+            sae_dict = sae
+        else:
+            self._input_was_single_sae = True
+            sae_dict = {"default": sae}
 
-        self.checkpoint_thresholds = []
+        # Initialize per-SAE state for each SAE
+        self._sae_states = {}
+        for key, sae_instance in sae_dict.items():
+            self._sae_states[key] = self._create_sae_state(sae_instance)
+
+        # Setup checkpoint thresholds
+        self.checkpoint_thresholds: list[int] = []
         if self.cfg.n_checkpoints > 0:
             self.checkpoint_thresholds = list(
                 range(
@@ -96,45 +185,7 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
                 )
             )[1:]
 
-        self.act_freq_scores = torch.zeros(sae.cfg.d_sae, device=cfg.device)
-        self.n_forward_passes_since_fired = torch.zeros(
-            sae.cfg.d_sae, device=cfg.device
-        )
-        self.n_frac_active_samples = 0
-
-        self.optimizer = Adam(
-            sae.parameters(),
-            lr=cfg.lr,
-            betas=(
-                cfg.adam_beta1,
-                cfg.adam_beta2,
-            ),
-        )
-        assert cfg.lr_end is not None  # this is set in config post-init
-        self.lr_scheduler = get_lr_scheduler(
-            cfg.lr_scheduler_name,
-            lr=cfg.lr,
-            optimizer=self.optimizer,
-            warm_up_steps=cfg.lr_warm_up_steps,
-            decay_steps=cfg.lr_decay_steps,
-            training_steps=self.cfg.total_training_steps,
-            lr_end=cfg.lr_end,
-            num_cycles=cfg.n_restart_cycles,
-        )
-        self.coefficient_schedulers = {}
-        for name, coeff_cfg in self.sae.get_coefficients().items():
-            if not isinstance(coeff_cfg, TrainCoefficientConfig):
-                coeff_cfg = TrainCoefficientConfig(value=coeff_cfg, warm_up_steps=0)
-            self.coefficient_schedulers[name] = CoefficientScheduler(
-                warm_up_steps=coeff_cfg.warm_up_steps,
-                final_value=coeff_cfg.value,
-            )
-
-        # Setup autocast if using
-        self.grad_scaler = torch.amp.GradScaler(
-            device=self.cfg.device, enabled=self.cfg.autocast
-        )
-
+        # Setup autocast
         if self.cfg.autocast:
             self.autocast_if_enabled = torch.autocast(
                 device_type=self.cfg.device,
@@ -144,215 +195,409 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
         else:
             self.autocast_if_enabled = contextlib.nullcontext()
 
+        # Initialize wandb runs for multi-SAE mode
+        self._wandb_runs = None
+        if cfg.logger.log_to_wandb and not self._input_was_single_sae:
+            self._init_wandb_runs()
+
+    def _create_sae_state(
+        self, sae: T_TRAINING_SAE
+    ) -> PerSAETrainerState[T_TRAINING_SAE]:
+        """Create per-SAE trainer state."""
+        _update_sae_lens_training_version(sae)
+
+        optimizer = Adam(
+            sae.parameters(),
+            lr=self.cfg.lr,
+            betas=(self.cfg.adam_beta1, self.cfg.adam_beta2),
+        )
+
+        assert self.cfg.lr_end is not None  # set in config post-init
+        lr_scheduler = get_lr_scheduler(
+            self.cfg.lr_scheduler_name,
+            lr=self.cfg.lr,
+            optimizer=optimizer,
+            warm_up_steps=self.cfg.lr_warm_up_steps,
+            decay_steps=self.cfg.lr_decay_steps,
+            training_steps=self.cfg.total_training_steps,
+            lr_end=self.cfg.lr_end,
+            num_cycles=self.cfg.n_restart_cycles,
+        )
+
+        coefficient_schedulers: dict[str, CoefficientScheduler] = {}
+        for name, coeff_cfg in sae.get_coefficients().items():
+            if not isinstance(coeff_cfg, TrainCoefficientConfig):
+                coeff_cfg = TrainCoefficientConfig(value=coeff_cfg, warm_up_steps=0)
+            coefficient_schedulers[name] = CoefficientScheduler(
+                warm_up_steps=coeff_cfg.warm_up_steps,
+                final_value=coeff_cfg.value,
+            )
+
+        grad_scaler = torch.amp.GradScaler(
+            device=self.cfg.device, enabled=self.cfg.autocast
+        )
+
+        return PerSAETrainerState(
+            sae=sae,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            coefficient_schedulers=coefficient_schedulers,
+            grad_scaler=grad_scaler,
+            act_freq_scores=torch.zeros(sae.cfg.d_sae, device=self.cfg.device),
+            n_forward_passes_since_fired=torch.zeros(
+                sae.cfg.d_sae, device=self.cfg.device
+            ),
+            n_frac_active_samples=0,
+            started_fine_tuning=False,
+        )
+
+    def _init_wandb_runs(self) -> None:
+        """Initialize separate wandb runs for each SAE in multi-SAE mode."""
+        self._wandb_runs = {}
+        group_id = self.cfg.logger.wandb_id or cast(Any, wandb).util.generate_id()
+
+        for sae_key in self._sae_states:
+            run_name = self.cfg.logger.run_name or "sae_training"
+            run = wandb.init(
+                project=self.cfg.logger.wandb_project,
+                entity=self.cfg.logger.wandb_entity,
+                name=f"{sae_key}/{run_name}",
+                group=group_id,
+                config={"sae_key": sae_key},
+                reinit=True,
+            )
+            self._wandb_runs[sae_key] = run
+
+    # Backward compatibility properties for single-SAE mode
+    @property
+    def sae(self) -> T_TRAINING_SAE:
+        """Get the SAE (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError(
+                "Cannot access .sae property in multi-SAE mode. "
+                "Use .get_sae(key) or iterate over .sae_keys instead."
+            )
+        return self._sae_states["default"].sae
+
+    @property
+    def optimizer(self) -> Adam:
+        """Get the optimizer (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .optimizer in multi-SAE mode.")
+        return self._sae_states["default"].optimizer
+
+    @property
+    def lr_scheduler(self) -> LRScheduler:
+        """Get the learning rate scheduler (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .lr_scheduler in multi-SAE mode.")
+        return self._sae_states["default"].lr_scheduler
+
+    @property
+    def coefficient_schedulers(self) -> dict[str, CoefficientScheduler]:
+        """Get coefficient schedulers (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .coefficient_schedulers in multi-SAE mode.")
+        return self._sae_states["default"].coefficient_schedulers
+
+    @property
+    def act_freq_scores(self) -> torch.Tensor:
+        """Get activation frequency scores (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .act_freq_scores in multi-SAE mode.")
+        return self._sae_states["default"].act_freq_scores
+
+    @act_freq_scores.setter
+    def act_freq_scores(self, value: torch.Tensor) -> None:
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot set .act_freq_scores in multi-SAE mode.")
+        self._sae_states["default"].act_freq_scores = value
+
+    @property
+    def n_forward_passes_since_fired(self) -> torch.Tensor:
+        """Get forward passes since fired (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError(
+                "Cannot access .n_forward_passes_since_fired in multi-SAE mode."
+            )
+        return self._sae_states["default"].n_forward_passes_since_fired
+
+    @n_forward_passes_since_fired.setter
+    def n_forward_passes_since_fired(self, value: torch.Tensor) -> None:
+        if not self._input_was_single_sae:
+            raise ValueError(
+                "Cannot set .n_forward_passes_since_fired in multi-SAE mode."
+            )
+        self._sae_states["default"].n_forward_passes_since_fired = value
+
+    @property
+    def n_frac_active_samples(self) -> int:
+        """Get number of samples for fractional activity (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .n_frac_active_samples in multi-SAE mode.")
+        return self._sae_states["default"].n_frac_active_samples
+
+    @n_frac_active_samples.setter
+    def n_frac_active_samples(self, value: int) -> None:
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot set .n_frac_active_samples in multi-SAE mode.")
+        self._sae_states["default"].n_frac_active_samples = value
+
+    @property
+    def started_fine_tuning(self) -> bool:
+        """Get fine-tuning status (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .started_fine_tuning in multi-SAE mode.")
+        return self._sae_states["default"].started_fine_tuning
+
+    @started_fine_tuning.setter
+    def started_fine_tuning(self, value: bool) -> None:
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot set .started_fine_tuning in multi-SAE mode.")
+        self._sae_states["default"].started_fine_tuning = value
+
+    @property
+    def grad_scaler(self) -> torch.amp.GradScaler:
+        """Get gradient scaler (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .grad_scaler in multi-SAE mode.")
+        return self._sae_states["default"].grad_scaler
+
     @property
     def feature_sparsity(self) -> torch.Tensor:
-        return self.act_freq_scores / self.n_frac_active_samples
+        """Get feature sparsity (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .feature_sparsity in multi-SAE mode.")
+        return self._sae_states["default"].feature_sparsity()
 
     @property
     def log_feature_sparsity(self) -> torch.Tensor:
-        return _log_feature_sparsity(self.feature_sparsity)
+        """Get log feature sparsity (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .log_feature_sparsity in multi-SAE mode.")
+        return self._sae_states["default"].log_feature_sparsity()
 
     @property
     def dead_neurons(self) -> torch.Tensor:
-        return (self.n_forward_passes_since_fired > self.cfg.dead_feature_window).bool()
+        """Get dead neurons mask (single-SAE mode only)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .dead_neurons in multi-SAE mode.")
+        return self._sae_states["default"].dead_neurons(self.cfg.dead_feature_window)
 
-    def fit(self) -> T_TRAINING_SAE:
-        self.sae.to(self.cfg.device)
-        pbar = tqdm(total=self.cfg.total_training_samples, desc="Training SAE")
+    # Multi-SAE mode accessors
+    @property
+    def sae_keys(self) -> list[str]:
+        """Get list of SAE keys."""
+        return list(self._sae_states.keys())
 
-        if self.sae.cfg.normalize_activations == "expected_average_only_in":
+    def get_sae(self, key: str) -> T_TRAINING_SAE:
+        """Get SAE by key."""
+        return self._sae_states[key].sae
+
+    def get_state(self, key: str) -> PerSAETrainerState[T_TRAINING_SAE]:
+        """Get full per-SAE state by key."""
+        return self._sae_states[key]
+
+    def fit(self) -> T_TRAINING_SAE | dict[str, T_TRAINING_SAE]:
+        """
+        Train the SAE(s).
+
+        Returns the trained SAE(s) in the same format as provided to the constructor:
+        a single SAE if a single SAE was provided, or a dict if a dict was provided.
+        """
+        # Move all SAEs to device
+        for state in self._sae_states.values():
+            state.sae.to(self.cfg.device)
+
+        pbar = tqdm(
+            total=self.cfg.total_training_samples,
+            desc="Training SAE" if self._input_was_single_sae else "Training SAEs",
+        )
+
+        # Handle activation normalization (use first SAE's config)
+        first_state = next(iter(self._sae_states.values()))
+        if first_state.sae.cfg.normalize_activations == "expected_average_only_in":
             self.activation_scaler.estimate_scaling_factor(
-                d_in=self.sae.cfg.d_in,
+                d_in=first_state.sae.cfg.d_in,
                 data_provider=self.data_provider,
                 n_batches_for_norm_estimate=int(1e3),
             )
 
         # Train loop
         while self.n_training_samples < self.cfg.total_training_samples:
-            # Do a training step.
-            batch = next(self.data_provider).to(self.sae.device)
+            # Get batch ONCE - shared across all SAEs
+            first_sae = next(iter(self._sae_states.values())).sae
+            batch = next(self.data_provider).to(first_sae.device)
             self.n_training_samples += batch.shape[0]
             scaled_batch = self.activation_scaler(batch)
 
-            step_output = self._train_step(sae=self.sae, sae_in=scaled_batch)
+            # Train each SAE on the same batch
+            step_outputs: dict[str, TrainStepOutput] = {}
+            for sae_key, state in self._sae_states.items():
+                step_output = self._train_step_for_sae(
+                    sae_key=sae_key,
+                    state=state,
+                    sae_in=scaled_batch,
+                )
+                step_outputs[sae_key] = step_output
 
+            # Logging
             if self.cfg.logger.log_to_wandb:
-                self._log_train_step(step_output)
+                self._log_train_steps(step_outputs)
                 self._run_and_log_evals()
 
             self._checkpoint_if_needed()
             self.n_training_steps += 1
-            self._update_pbar(step_output, pbar)
+            self._update_pbar(step_outputs, pbar)
 
-        # fold the estimated norm scaling factor into the sae weights
+        # Fold activation norm scaling factor into each SAE
         if self.activation_scaler.scaling_factor is not None:
-            self.sae.fold_activation_norm_scaling_factor(
-                self.activation_scaler.scaling_factor
-            )
+            for state in self._sae_states.values():
+                state.sae.fold_activation_norm_scaling_factor(
+                    self.activation_scaler.scaling_factor
+                )
             self.activation_scaler.scaling_factor = None
 
         if self.cfg.save_final_checkpoint:
             self.save_checkpoint(checkpoint_name=f"final_{self.n_training_samples}")
 
+        # Finish wandb runs for multi-SAE mode
+        if self._wandb_runs is not None:
+            for run in self._wandb_runs.values():
+                run.finish()
+
         pbar.close()
-        return self.sae
+        return self._get_return_value()
 
-    def save_checkpoint(
+    def _get_return_value(self) -> T_TRAINING_SAE | dict[str, T_TRAINING_SAE]:
+        """Return SAE(s) in same format as input."""
+        if self._input_was_single_sae:
+            return self._sae_states["default"].sae
+        return {key: state.sae for key, state in self._sae_states.items()}
+
+    def _train_step_for_sae(
         self,
-        checkpoint_name: str,
-        wandb_aliases: list[str] | None = None,
-    ) -> None:
-        checkpoint_path = None
-        if self.cfg.checkpoint_path is not None or self.cfg.logger.log_to_wandb:
-            with path_or_tmp_dir(self.cfg.checkpoint_path) as base_checkpoint_path:
-                checkpoint_path = base_checkpoint_path / checkpoint_name
-                checkpoint_path.mkdir(exist_ok=True, parents=True)
-
-                weights_path, cfg_path = self.sae.save_model(str(checkpoint_path))
-
-                sparsity_path = checkpoint_path / SPARSITY_FILENAME
-                save_file({"sparsity": self.log_feature_sparsity}, sparsity_path)
-
-                self.save_trainer_state(checkpoint_path)
-
-                if self.cfg.logger.log_to_wandb:
-                    self.cfg.logger.log(
-                        self,
-                        weights_path,
-                        cfg_path,
-                        sparsity_path=sparsity_path,
-                        wandb_aliases=wandb_aliases,
-                    )
-
-        if self.save_checkpoint_fn is not None:
-            self.save_checkpoint_fn(checkpoint_path=checkpoint_path)
-
-    def save_trainer_state(self, checkpoint_path: Path) -> None:
-        checkpoint_path.mkdir(exist_ok=True, parents=True)
-        scheduler_state_dicts = {
-            name: scheduler.state_dict()
-            for name, scheduler in self.coefficient_schedulers.items()
-        }
-        torch.save(
-            {
-                "optimizer": self.optimizer.state_dict(),
-                "lr_scheduler": self.lr_scheduler.state_dict(),
-                "n_training_samples": self.n_training_samples,
-                "n_training_steps": self.n_training_steps,
-                "act_freq_scores": self.act_freq_scores,
-                "n_forward_passes_since_fired": self.n_forward_passes_since_fired,
-                "n_frac_active_samples": self.n_frac_active_samples,
-                "started_fine_tuning": self.started_fine_tuning,
-                "coefficient_schedulers": scheduler_state_dicts,
-            },
-            str(checkpoint_path / TRAINER_STATE_FILENAME),
-        )
-        activation_scaler_path = checkpoint_path / ACTIVATION_SCALER_CFG_FILENAME
-        self.activation_scaler.save(str(activation_scaler_path))
-
-    def load_trainer_state(self, checkpoint_path: Path | str) -> None:
-        checkpoint_path = Path(checkpoint_path)
-        self.activation_scaler.load(checkpoint_path / ACTIVATION_SCALER_CFG_FILENAME)
-        state_dict = torch.load(checkpoint_path / TRAINER_STATE_FILENAME)
-        self.optimizer.load_state_dict(state_dict["optimizer"])
-        self.lr_scheduler.load_state_dict(state_dict["lr_scheduler"])
-        self.n_training_samples = state_dict["n_training_samples"]
-        self.n_training_steps = state_dict["n_training_steps"]
-        self.act_freq_scores = state_dict["act_freq_scores"]
-        self.n_forward_passes_since_fired = state_dict["n_forward_passes_since_fired"]
-        self.n_frac_active_samples = state_dict["n_frac_active_samples"]
-        self.started_fine_tuning = state_dict["started_fine_tuning"]
-        for name, scheduler_state_dict in state_dict["coefficient_schedulers"].items():
-            self.coefficient_schedulers[name].load_state_dict(scheduler_state_dict)
-
-    def _train_step(
-        self,
-        sae: T_TRAINING_SAE,
+        sae_key: str,
+        state: PerSAETrainerState[T_TRAINING_SAE],
         sae_in: torch.Tensor,
     ) -> TrainStepOutput:
-        sae.train()
+        """Execute a single training step for one SAE."""
+        state.sae.train()
 
-        # log and then reset the feature sparsity every feature_sampling_window steps
+        # Log and reset sparsity every feature_sampling_window steps
         if (self.n_training_steps + 1) % self.cfg.feature_sampling_window == 0:
             if self.cfg.logger.log_to_wandb:
-                sparsity_log_dict = self._build_sparsity_log_dict()
-                wandb.log(sparsity_log_dict, step=self.n_training_steps)
-            self._reset_running_sparsity_stats()
+                sparsity_log_dict = self._build_sparsity_log_dict_for_sae(
+                    sae_key, state
+                )
+                self._log_to_wandb(sae_key, sparsity_log_dict)
+            self._reset_running_sparsity_stats_for_sae(state)
 
-        # for documentation on autocasting see:
-        # https://pytorch.org/tutorials/recipes/recipes/amp_recipe.html
+        # Forward pass with autocast
         with self.autocast_if_enabled:
-            train_step_output = self.sae.training_forward_pass(
+            train_step_output = state.sae.training_forward_pass(
                 step_input=TrainStepInput(
                     sae_in=sae_in,
-                    dead_neuron_mask=self.dead_neurons,
-                    coefficients=self.get_coefficients(),
+                    dead_neuron_mask=state.dead_neurons(self.cfg.dead_feature_window),
+                    coefficients=state.get_coefficients(),
                     n_training_steps=self.n_training_steps,
                 ),
             )
 
+            # Update sparsity tracking
             with torch.no_grad():
-                # calling .bool() should be equivalent to .abs() > 0, and work with coo tensors
                 firing_feats = train_step_output.feature_acts.bool().float()
                 did_fire = firing_feats.sum(-2).bool()
                 if did_fire.is_sparse:
                     did_fire = did_fire.to_dense()
-                self.n_forward_passes_since_fired += 1
-                self.n_forward_passes_since_fired[did_fire] = 0
-                self.act_freq_scores += firing_feats.sum(0)
-                self.n_frac_active_samples += self.cfg.train_batch_size_samples
+                state.n_forward_passes_since_fired += 1
+                state.n_forward_passes_since_fired[did_fire] = 0
+                state.act_freq_scores += firing_feats.sum(0)
+                state.n_frac_active_samples += self.cfg.train_batch_size_samples
 
-        # Grad scaler will rescale gradients if autocast is enabled
-        self.grad_scaler.scale(
-            train_step_output.loss
-        ).backward()  # loss.backward() if not autocasting
-        self.grad_scaler.unscale_(self.optimizer)  # needed to clip correctly
-        # TODO: Work out if grad norm clipping should be in config / how to test it.
-        torch.nn.utils.clip_grad_norm_(sae.parameters(), 1.0)
-        self.grad_scaler.step(
-            self.optimizer
-        )  # just ctx.optimizer.step() if not autocasting
-        self.grad_scaler.update()
+        # Backward pass
+        state.grad_scaler.scale(train_step_output.loss).backward()
+        state.grad_scaler.unscale_(state.optimizer)
+        torch.nn.utils.clip_grad_norm_(state.sae.parameters(), 1.0)
+        state.grad_scaler.step(state.optimizer)
+        state.grad_scaler.update()
 
-        self.optimizer.zero_grad()
-        self.lr_scheduler.step()
-        for scheduler in self.coefficient_schedulers.values():
+        state.optimizer.zero_grad()
+        state.lr_scheduler.step()
+        for scheduler in state.coefficient_schedulers.values():
             scheduler.step()
 
         return train_step_output
 
+    def _log_to_wandb(self, sae_key: str, log_dict: dict[str, Any]) -> None:
+        """Log to wandb, handling both single and multi-SAE modes."""
+        if self._input_was_single_sae:
+            wandb.log(log_dict, step=self.n_training_steps)
+        else:
+            assert self._wandb_runs is not None
+            # Use the specific run for this SAE
+            run = self._wandb_runs[sae_key]
+            run.log(log_dict, step=self.n_training_steps)
+
     @torch.no_grad()
-    def _log_train_step(self, step_output: TrainStepOutput):
-        if (self.n_training_steps + 1) % self.cfg.logger.wandb_log_frequency == 0:
-            wandb.log(
-                self._build_train_step_log_dict(
-                    output=step_output,
-                    n_training_samples=self.n_training_samples,
-                ),
-                step=self.n_training_steps,
+    def _log_train_steps(self, step_outputs: dict[str, TrainStepOutput]) -> None:
+        """Log training metrics for all SAEs."""
+        if (self.n_training_steps + 1) % self.cfg.logger.wandb_log_frequency != 0:
+            return
+
+        for sae_key, step_output in step_outputs.items():
+            state = self._sae_states[sae_key]
+            log_dict = self._build_train_step_log_dict_for_sae(
+                state=state,
+                output=step_output,
+                n_training_samples=self.n_training_samples,
             )
+            self._log_to_wandb(sae_key, log_dict)
+
+    @torch.no_grad()
+    def _run_and_log_evals(self) -> None:
+        """Run and log evaluations for all SAEs."""
+        if (self.n_training_steps + 1) % (
+            self.cfg.logger.wandb_log_frequency
+            * self.cfg.logger.eval_every_n_wandb_logs
+        ) != 0:
+            return
+
+        for sae_key, state in self._sae_states.items():
+            state.sae.eval()
+            eval_metrics = (
+                self.evaluator(state.sae, self.data_provider, self.activation_scaler)
+                if self.evaluator is not None
+                else {}
+            )
+            for key, value in state.sae.log_histograms().items():
+                eval_metrics[key] = wandb.Histogram(value)  # type: ignore
+
+            self._log_to_wandb(sae_key, eval_metrics)
+            state.sae.train()
 
     @torch.no_grad()
     def get_coefficients(self) -> dict[str, float]:
-        return {
-            name: scheduler.value
-            for name, scheduler in self.coefficient_schedulers.items()
-        }
+        """Get coefficients (single-SAE mode only, for backward compatibility)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot access .get_coefficients() in multi-SAE mode.")
+        return self._sae_states["default"].get_coefficients()
 
     @torch.no_grad()
-    def _build_train_step_log_dict(
+    def _build_train_step_log_dict_for_sae(
         self,
+        state: PerSAETrainerState[T_TRAINING_SAE],
         output: TrainStepOutput,
         n_training_samples: int,
     ) -> dict[str, Any]:
+        """Build log dict for a single SAE's training step."""
         sae_in = output.sae_in
         sae_out = output.sae_out
         feature_acts = output.feature_acts
         loss = output.loss.item()
 
-        # metrics for currents acts
         l0 = feature_acts.bool().float().sum(-1).to_dense().mean()
-        current_learning_rate = self.optimizer.param_groups[0]["lr"]
+        current_learning_rate = state.optimizer.param_groups[0]["lr"]
 
         per_token_l2_loss = (sae_out - sae_in).pow(2).sum(dim=-1).squeeze()
         total_variance = (sae_in - sae_in.mean(0)).pow(2).sum(-1)
@@ -360,21 +605,20 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
         explained_variance = 1 - per_token_l2_loss.mean() / total_variance.mean()
 
         log_dict = {
-            # losses
             "losses/overall_loss": loss,
-            # variance explained
             "metrics/explained_variance_legacy": explained_variance_legacy.mean().item(),
             "metrics/explained_variance_legacy_std": explained_variance_legacy.std().item(),
             "metrics/explained_variance": explained_variance.item(),
             "metrics/l0": l0.item(),
-            # sparsity
-            "sparsity/mean_passes_since_fired": self.n_forward_passes_since_fired.mean().item(),
-            "sparsity/dead_features": self.dead_neurons.sum().item(),
+            "sparsity/mean_passes_since_fired": state.n_forward_passes_since_fired.mean().item(),
+            "sparsity/dead_features": state.dead_neurons(self.cfg.dead_feature_window)
+            .sum()
+            .item(),
             "details/current_learning_rate": current_learning_rate,
             "details/n_training_samples": n_training_samples,
             **{
                 f"details/{name}_coefficient": scheduler.value
-                for name, scheduler in self.coefficient_schedulers.items()
+                for name, scheduler in state.coefficient_schedulers.items()
             },
         }
         for loss_name, loss_value in output.losses.items():
@@ -386,48 +630,304 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
         return log_dict
 
     @torch.no_grad()
-    def _run_and_log_evals(self):
-        # record loss frequently, but not all the time.
-        if (self.n_training_steps + 1) % (
-            self.cfg.logger.wandb_log_frequency
-            * self.cfg.logger.eval_every_n_wandb_logs
-        ) == 0:
-            self.sae.eval()
-            eval_metrics = (
-                self.evaluator(self.sae, self.data_provider, self.activation_scaler)
-                if self.evaluator is not None
-                else {}
-            )
-            for key, value in self.sae.log_histograms().items():
-                eval_metrics[key] = wandb.Histogram(value)  # type: ignore
-
-            wandb.log(
-                eval_metrics,
-                step=self.n_training_steps,
-            )
-            self.sae.train()
-
-    @torch.no_grad()
-    def _build_sparsity_log_dict(self) -> dict[str, Any]:
-        log_feature_sparsity = _log_feature_sparsity(self.feature_sparsity)
+    def _build_sparsity_log_dict_for_sae(
+        self,
+        sae_key: str,
+        state: PerSAETrainerState[T_TRAINING_SAE],  # noqa: ARG002
+    ) -> dict[str, Any]:
+        """Build sparsity log dict for a single SAE."""
+        log_feature_sparsity = state.log_feature_sparsity()
         wandb_histogram = wandb.Histogram(log_feature_sparsity.numpy())  # type: ignore
+        feature_sparsity = state.feature_sparsity()
         return {
             "metrics/mean_log10_feature_sparsity": log_feature_sparsity.mean().item(),
             "plots/feature_density_line_chart": wandb_histogram,
-            "sparsity/below_1e-5": (self.feature_sparsity < 1e-5).sum().item(),
-            "sparsity/below_1e-6": (self.feature_sparsity < 1e-6).sum().item(),
+            "sparsity/below_1e-5": (feature_sparsity < 1e-5).sum().item(),
+            "sparsity/below_1e-6": (feature_sparsity < 1e-6).sum().item(),
         }
 
     @torch.no_grad()
-    def _reset_running_sparsity_stats(self) -> None:
-        self.act_freq_scores = torch.zeros(
-            self.sae.cfg.d_sae,  # type: ignore
+    def _reset_running_sparsity_stats_for_sae(
+        self, state: PerSAETrainerState[T_TRAINING_SAE]
+    ) -> None:
+        """Reset sparsity stats for a single SAE."""
+        state.act_freq_scores = torch.zeros(
+            state.sae.cfg.d_sae,
             device=self.cfg.device,
         )
-        self.n_frac_active_samples = 0
+        state.n_frac_active_samples = 0
+
+    # Legacy methods for single-SAE mode backward compatibility
+    def _train_step(
+        self,
+        sae: T_TRAINING_SAE,  # noqa: ARG002
+        sae_in: torch.Tensor,
+    ) -> TrainStepOutput:
+        """Legacy train step method for backward compatibility."""
+        if not self._input_was_single_sae:
+            raise ValueError("_train_step is only available in single-SAE mode.")
+        return self._train_step_for_sae("default", self._sae_states["default"], sae_in)
 
     @torch.no_grad()
-    def _checkpoint_if_needed(self):
+    def _log_train_step(self, step_output: TrainStepOutput) -> None:
+        """Legacy log method for backward compatibility."""
+        if not self._input_was_single_sae:
+            raise ValueError("_log_train_step is only available in single-SAE mode.")
+        self._log_train_steps({"default": step_output})
+
+    @torch.no_grad()
+    def _build_train_step_log_dict(
+        self,
+        output: TrainStepOutput,
+        n_training_samples: int,
+    ) -> dict[str, Any]:
+        """Legacy method for backward compatibility."""
+        if not self._input_was_single_sae:
+            raise ValueError(
+                "_build_train_step_log_dict is only available in single-SAE mode."
+            )
+        return self._build_train_step_log_dict_for_sae(
+            state=self._sae_states["default"],
+            output=output,
+            n_training_samples=n_training_samples,
+        )
+
+    @torch.no_grad()
+    def _build_sparsity_log_dict(self) -> dict[str, Any]:
+        """Legacy method for backward compatibility."""
+        if not self._input_was_single_sae:
+            raise ValueError(
+                "_build_sparsity_log_dict is only available in single-SAE mode."
+            )
+        return self._build_sparsity_log_dict_for_sae(
+            "default", self._sae_states["default"]
+        )
+
+    @torch.no_grad()
+    def _reset_running_sparsity_stats(self) -> None:
+        """Legacy method for backward compatibility."""
+        if not self._input_was_single_sae:
+            raise ValueError(
+                "_reset_running_sparsity_stats is only available in single-SAE mode."
+            )
+        self._reset_running_sparsity_stats_for_sae(self._sae_states["default"])
+
+    def save_checkpoint(
+        self,
+        checkpoint_name: str,
+        wandb_aliases: list[str] | None = None,
+    ) -> None:
+        """
+        Save checkpoint(s) for trained SAE(s).
+
+        For single SAE mode, saves in flat structure (backward compatible).
+        For multi-SAE mode, creates subdirectories for each SAE.
+        """
+        checkpoint_path = None
+        if self.cfg.checkpoint_path is not None or self.cfg.logger.log_to_wandb:
+            with path_or_tmp_dir(self.cfg.checkpoint_path) as base_checkpoint_path:
+                checkpoint_path = base_checkpoint_path / checkpoint_name
+                checkpoint_path.mkdir(exist_ok=True, parents=True)
+
+                if self._input_was_single_sae:
+                    self._save_single_sae_checkpoint(checkpoint_path, wandb_aliases)
+                else:
+                    self._save_multi_sae_checkpoint(checkpoint_path, wandb_aliases)
+
+        if self.save_checkpoint_fn is not None:
+            self.save_checkpoint_fn(checkpoint_path=checkpoint_path)
+
+    def _save_single_sae_checkpoint(
+        self,
+        checkpoint_path: Path,
+        wandb_aliases: list[str] | None,
+    ) -> None:
+        """Save checkpoint in original flat format for backward compatibility."""
+        state = self._sae_states["default"]
+
+        weights_path, cfg_path = state.sae.save_model(str(checkpoint_path))
+        sparsity_path = checkpoint_path / SPARSITY_FILENAME
+        save_file({"sparsity": state.log_feature_sparsity()}, sparsity_path)
+
+        # Include global state in trainer state for backward compatibility
+        self._save_sae_trainer_state(state, checkpoint_path, include_global_state=True)
+        self._save_shared_state(checkpoint_path)
+
+        if self.cfg.logger.log_to_wandb:
+            self.cfg.logger.log(
+                self,
+                weights_path,
+                cfg_path,
+                sparsity_path=sparsity_path,
+                wandb_aliases=wandb_aliases,
+            )
+
+    def _save_multi_sae_checkpoint(
+        self,
+        checkpoint_path: Path,
+        wandb_aliases: list[str] | None,
+    ) -> None:
+        """Save checkpoint with per-SAE subdirectories."""
+        # Save each SAE in its own subdirectory
+        for sae_key, state in self._sae_states.items():
+            sae_dir = checkpoint_path / sae_key
+            sae_dir.mkdir(exist_ok=True, parents=True)
+
+            weights_path, cfg_path = state.sae.save_model(str(sae_dir))
+            sparsity_path = sae_dir / SPARSITY_FILENAME
+            save_file({"sparsity": state.log_feature_sparsity()}, sparsity_path)
+
+            self._save_sae_trainer_state(state, sae_dir)
+
+            # Log to wandb for this specific SAE's run
+            if self.cfg.logger.log_to_wandb and self._wandb_runs is not None:
+                run = self._wandb_runs[sae_key]
+                sae_name = state.sae.get_name().replace("/", "__")
+                model_artifact = wandb.Artifact(
+                    sae_name,
+                    type="model",
+                    metadata=dict(self.cfg.__dict__),
+                )
+                model_artifact.add_file(str(weights_path))
+                model_artifact.add_file(str(cfg_path))
+                run.log_artifact(model_artifact, aliases=wandb_aliases)
+
+                sparsity_artifact = wandb.Artifact(
+                    f"{sae_name}_log_feature_sparsity",
+                    type="log_feature_sparsity",
+                    metadata=dict(self.cfg.__dict__),
+                )
+                sparsity_artifact.add_file(str(sparsity_path))
+                run.log_artifact(sparsity_artifact)
+
+        # Save shared state
+        shared_dir = checkpoint_path / "shared"
+        shared_dir.mkdir(exist_ok=True, parents=True)
+        self._save_shared_state(shared_dir)
+
+    def _save_sae_trainer_state(
+        self,
+        state: PerSAETrainerState[T_TRAINING_SAE],
+        path: Path,
+        include_global_state: bool = False,
+    ) -> None:
+        """Save per-SAE trainer state."""
+        scheduler_state_dicts = {
+            name: scheduler.state_dict()
+            for name, scheduler in state.coefficient_schedulers.items()
+        }
+        state_dict: dict[str, Any] = {
+            "optimizer": state.optimizer.state_dict(),
+            "lr_scheduler": state.lr_scheduler.state_dict(),
+            "act_freq_scores": state.act_freq_scores,
+            "n_forward_passes_since_fired": state.n_forward_passes_since_fired,
+            "n_frac_active_samples": state.n_frac_active_samples,
+            "started_fine_tuning": state.started_fine_tuning,
+            "coefficient_schedulers": scheduler_state_dicts,
+        }
+        # Include global state for single-SAE mode backward compatibility
+        if include_global_state:
+            state_dict["n_training_samples"] = self.n_training_samples
+            state_dict["n_training_steps"] = self.n_training_steps
+        torch.save(state_dict, str(path / TRAINER_STATE_FILENAME))
+
+    def _save_shared_state(self, path: Path) -> None:
+        """Save state shared across all SAEs."""
+        path.mkdir(exist_ok=True, parents=True)
+        activation_scaler_path = path / ACTIVATION_SCALER_CFG_FILENAME
+        self.activation_scaler.save(str(activation_scaler_path))
+
+        # For multi-SAE mode, also save global training progress
+        if not self._input_was_single_sae:
+            torch.save(
+                {
+                    "n_training_steps": self.n_training_steps,
+                    "n_training_samples": self.n_training_samples,
+                },
+                str(path / "global_trainer_state.pt"),
+            )
+
+    def save_trainer_state(self, checkpoint_path: Path) -> None:
+        """Legacy method for backward compatibility."""
+        if not self._input_was_single_sae:
+            raise ValueError(
+                "save_trainer_state is only available in single-SAE mode. "
+                "Use save_checkpoint for multi-SAE mode."
+            )
+        checkpoint_path.mkdir(exist_ok=True, parents=True)
+        state = self._sae_states["default"]
+        # Include global state for backward compatibility
+        self._save_sae_trainer_state(state, checkpoint_path, include_global_state=True)
+        self._save_shared_state(checkpoint_path)
+
+    def load_trainer_state(self, checkpoint_path: Path | str) -> None:
+        """
+        Load trainer state from a checkpoint.
+
+        Automatically detects whether the checkpoint is single-SAE or multi-SAE format.
+        """
+        checkpoint_path = Path(checkpoint_path)
+
+        # Check if this is a multi-SAE checkpoint
+        shared_dir = checkpoint_path / "shared"
+
+        if shared_dir.exists() and not self._input_was_single_sae:
+            self._load_multi_sae_state(checkpoint_path)
+        else:
+            self._load_single_sae_state(checkpoint_path)
+
+    def _load_single_sae_state(self, checkpoint_path: Path) -> None:
+        """Load single SAE checkpoint (backward compatible)."""
+        if not self._input_was_single_sae:
+            raise ValueError("Cannot load single-SAE checkpoint into multi-SAE trainer")
+
+        state = self._sae_states["default"]
+        self.activation_scaler.load(checkpoint_path / ACTIVATION_SCALER_CFG_FILENAME)
+
+        state_dict = torch.load(checkpoint_path / TRAINER_STATE_FILENAME)
+        state.optimizer.load_state_dict(state_dict["optimizer"])
+        state.lr_scheduler.load_state_dict(state_dict["lr_scheduler"])
+        self.n_training_samples = state_dict["n_training_samples"]
+        self.n_training_steps = state_dict["n_training_steps"]
+        state.act_freq_scores = state_dict["act_freq_scores"]
+        state.n_forward_passes_since_fired = state_dict["n_forward_passes_since_fired"]
+        state.n_frac_active_samples = state_dict["n_frac_active_samples"]
+        state.started_fine_tuning = state_dict["started_fine_tuning"]
+
+        for name, scheduler_state in state_dict["coefficient_schedulers"].items():
+            state.coefficient_schedulers[name].load_state_dict(scheduler_state)
+
+    def _load_multi_sae_state(self, checkpoint_path: Path) -> None:
+        """Load multi-SAE checkpoint."""
+        # Load shared state
+        shared_dir = checkpoint_path / "shared"
+        self.activation_scaler.load(shared_dir / ACTIVATION_SCALER_CFG_FILENAME)
+
+        global_state = torch.load(shared_dir / "global_trainer_state.pt")
+        self.n_training_steps = global_state["n_training_steps"]
+        self.n_training_samples = global_state["n_training_samples"]
+
+        # Load per-SAE state
+        for sae_key, state in self._sae_states.items():
+            sae_dir = checkpoint_path / sae_key
+            if not sae_dir.exists():
+                raise ValueError(f"Checkpoint missing directory for SAE '{sae_key}'")
+
+            state_dict = torch.load(sae_dir / TRAINER_STATE_FILENAME)
+            state.optimizer.load_state_dict(state_dict["optimizer"])
+            state.lr_scheduler.load_state_dict(state_dict["lr_scheduler"])
+            state.act_freq_scores = state_dict["act_freq_scores"]
+            state.n_forward_passes_since_fired = state_dict[
+                "n_forward_passes_since_fired"
+            ]
+            state.n_frac_active_samples = state_dict["n_frac_active_samples"]
+            state.started_fine_tuning = state_dict["started_fine_tuning"]
+
+            for name, scheduler_state in state_dict["coefficient_schedulers"].items():
+                state.coefficient_schedulers[name].load_state_dict(scheduler_state)
+
+    @torch.no_grad()
+    def _checkpoint_if_needed(self) -> None:
         if (
             self.checkpoint_thresholds
             and self.n_training_samples > self.checkpoint_thresholds[0]
@@ -438,16 +938,21 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
     @torch.no_grad()
     def _update_pbar(
         self,
-        step_output: TrainStepOutput,
+        step_outputs: dict[str, TrainStepOutput],
         pbar: tqdm,  # type: ignore
         update_interval: int = 100,
-    ):
+    ) -> None:
         if self.n_training_steps % update_interval == 0:
+            # Use first SAE's output for progress bar display
+            first_output = next(iter(step_outputs.values()))
             loss_strs = " | ".join(
                 f"{loss_name}: {_unwrap_item(loss_value):.5f}"
-                for loss_name, loss_value in step_output.losses.items()
+                for loss_name, loss_value in first_output.losses.items()
             )
-            pbar.set_description(f"{self.n_training_steps}| {loss_strs}")
+            desc = f"{self.n_training_steps}| {loss_strs}"
+            if not self._input_was_single_sae:
+                desc = f"[{len(self._sae_states)} SAEs] " + desc
+            pbar.set_description(desc)
             pbar.update(update_interval * self.cfg.train_batch_size_samples)
 
 
