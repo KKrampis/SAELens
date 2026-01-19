@@ -194,12 +194,15 @@ class LanguageModelSAETrainingRunner:
 
         self._compile_if_needed()
         sae = self.run_trainer_with_interruption_handling(trainer)
+        assert not isinstance(sae, dict)  # Single-SAE mode only
 
         if self.cfg.output_path is not None:
             self.save_final_sae(
                 sae=sae,
                 output_path=self.cfg.output_path,
-                log_feature_sparsity=trainer.log_feature_sparsity,
+                log_feature_sparsity=trainer.get_state(
+                    "default"
+                ).log_feature_sparsity(),
             )
 
         if self.cfg.logger.log_to_wandb:

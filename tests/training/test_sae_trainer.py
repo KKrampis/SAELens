@@ -100,9 +100,10 @@ def test_train_step__reduces_loss_when_called_repeatedly_on_same_acts(
     layer_acts = next(trainer.data_provider)
 
     # intentionally train on the same activations 5 times to ensure loss decreases
+    state = trainer.get_state("default")
     train_outputs = [
         trainer._train_step(
-            sae=trainer.sae,
+            sae=state.sae,
             sae_in=layer_acts,
         )
         for _ in range(5)
@@ -112,15 +113,16 @@ def test_train_step__reduces_loss_when_called_repeatedly_on_same_acts(
     for output, next_output in zip(train_outputs[:-1], train_outputs[1:]):
         assert output.loss > next_output.loss
     assert (
-        trainer.n_frac_active_samples == 20
+        state.n_frac_active_samples == 20
     )  # should increment each step by batch_size (5*4)
 
 
 def test_train_step__output_looks_reasonable(trainer: SAETrainer[Any, Any]) -> None:
     layer_acts = next(trainer.data_provider)
+    state = trainer.get_state("default")
 
     output = trainer._train_step(
-        sae=trainer.sae,
+        sae=state.sae,
         sae_in=layer_acts,
     )
 
@@ -131,10 +133,10 @@ def test_train_step__output_looks_reasonable(trainer: SAETrainer[Any, Any]) -> N
     assert output.feature_acts.shape == (4, 128)  # batch_size, d_sae
     # ghots grads shouldn't trigger until dead_feature_window, which hasn't been reached yet
     assert output.losses.get("ghost_grad_loss", 0) == 0
-    assert trainer.n_frac_active_samples == 4
-    assert trainer.act_freq_scores.sum() > 0  # at least SOME acts should have fired
+    assert state.n_frac_active_samples == 4
+    assert state.act_freq_scores.sum() > 0  # at least SOME acts should have fired
     assert_close(
-        trainer.act_freq_scores,
+        state.act_freq_scores,
         (output.feature_acts.abs() > 0).float().sum(0),
     )
 
@@ -144,26 +146,25 @@ def test_train_step__sparsity_updates_based_on_feature_act_sparsity(
 ) -> None:
     trainer._reset_running_sparsity_stats()
     layer_acts = next(trainer.data_provider)
+    state = trainer.get_state("default")
 
     train_output = trainer._train_step(
-        sae=trainer.sae,
+        sae=state.sae,
         sae_in=layer_acts,
     )
     feature_acts = train_output.feature_acts
 
     # should increase by batch_size
-    assert trainer.n_frac_active_samples == 4
+    assert state.n_frac_active_samples == 4
     # add freq scores for all non-zero feature acts
     assert_close(
-        trainer.act_freq_scores,
+        state.act_freq_scores,
         (feature_acts > 0).float().sum(dim=0),
     )
 
     # check that features that just fired have n_forward_passes_since_fired = 0
     assert (
-        trainer.n_forward_passes_since_fired[
-            ((feature_acts > 0).float()[-1] == 1)
-        ].max()
+        state.n_forward_passes_since_fired[((feature_acts > 0).float()[-1] == 1)].max()
         == 0
     )
     assert train_output.feature_acts is feature_acts
@@ -206,6 +207,7 @@ def test_build_train_step_log_dict(
     # we're relying on the trainer only for some of the metrics here
     # we should more / less try to break this and push
     # everything through the train step output if we can.
+    state = trainer.get_state("default")
     log_dict = trainer._build_train_step_log_dict(
         output=train_output, n_training_samples=123
     )
@@ -217,10 +219,12 @@ def test_build_train_step_log_dict(
         "metrics/explained_variance_legacy": 0.75,
         "metrics/explained_variance_legacy_std": 0.25,
         "metrics/l0": 2.0,
-        "sparsity/mean_passes_since_fired": trainer.n_forward_passes_since_fired.mean().item(),
-        "sparsity/dead_features": trainer.dead_neurons.sum().item(),
+        "sparsity/mean_passes_since_fired": state.n_forward_passes_since_fired.mean().item(),
+        "sparsity/dead_features": state.dead_neurons(trainer.cfg.dead_feature_window)
+        .sum()
+        .item(),
         "details/current_learning_rate": 2e-4,
-        "details/l1_coefficient": trainer.sae.cfg.l1_coefficient,
+        "details/l1_coefficient": state.sae.cfg.l1_coefficient,
         "details/n_training_samples": 123,
         "metrics/topk_threshold": 0.5,
     }
@@ -522,20 +526,21 @@ def test_SAETrainer_save_and_load_from_checkpoint(
         sae=sae1,
         data_provider=activation_store,
     )
+    state = trainer.get_state("default")
 
     for param in sae1.parameters():
         param.grad = torch.randn_like(param)
-    trainer.optimizer.step()
+    state.optimizer.step()
 
     trainer.n_training_steps = 17
     trainer.n_training_samples = 170
-    trainer.activation_scaler.scaling_factor = 1.0
-    trainer.act_freq_scores = torch.tensor([1.0, 2.0, 3.0])
-    trainer.n_forward_passes_since_fired = torch.tensor([1.0, 2.0, 3.0])
-    trainer.n_frac_active_samples = 170
+    state.activation_scaler.scaling_factor = 1.0
+    state.act_freq_scores = torch.tensor([1.0, 2.0, 3.0])
+    state.n_forward_passes_since_fired = torch.tensor([1.0, 2.0, 3.0])
+    state.n_frac_active_samples = 170
 
     for _ in range(17):
-        trainer.coefficient_schedulers["l1"].step()
+        state.coefficient_schedulers["l1"].step()
 
     trainer.save_trainer_state(checkpoint_dir)
 
@@ -545,27 +550,28 @@ def test_SAETrainer_save_and_load_from_checkpoint(
         data_provider=activation_store,
     )
     new_trainer.load_trainer_state(checkpoint_dir)
+    new_state_obj = new_trainer.get_state("default")
 
     assert new_trainer.n_training_steps == trainer.n_training_steps
     assert new_trainer.n_training_samples == trainer.n_training_samples
     assert (
-        new_trainer.activation_scaler.scaling_factor
-        == trainer.activation_scaler.scaling_factor
+        new_state_obj.activation_scaler.scaling_factor
+        == state.activation_scaler.scaling_factor
     )
-    assert torch.allclose(new_trainer.act_freq_scores, trainer.act_freq_scores)
+    assert torch.allclose(new_state_obj.act_freq_scores, state.act_freq_scores)
     assert torch.allclose(
-        new_trainer.n_forward_passes_since_fired, trainer.n_forward_passes_since_fired
+        new_state_obj.n_forward_passes_since_fired, state.n_forward_passes_since_fired
     )
-    assert new_trainer.n_frac_active_samples == trainer.n_frac_active_samples
-    assert new_trainer.started_fine_tuning == trainer.started_fine_tuning
+    assert new_state_obj.n_frac_active_samples == state.n_frac_active_samples
+    assert new_state_obj.started_fine_tuning == state.started_fine_tuning
     assert (
-        new_trainer.coefficient_schedulers["l1"].current_step
-        == trainer.coefficient_schedulers["l1"].current_step
+        new_state_obj.coefficient_schedulers["l1"].current_step
+        == state.coefficient_schedulers["l1"].current_step
     )
 
     # compare optimizer state dicts
-    old_state = trainer.optimizer.state_dict()
-    new_state = new_trainer.optimizer.state_dict()
+    old_state = state.optimizer.state_dict()
+    new_state = new_state_obj.optimizer.state_dict()
     assert old_state.keys() == new_state.keys()
     for key in old_state:
         if isinstance(old_state[key], dict):
@@ -735,14 +741,6 @@ def test_multi_sae_trainer_basic_functionality():
     assert isinstance(state_small, PerSAETrainerState)
     assert state_small.sae is sae1
 
-    # Test that single-SAE properties raise errors in multi-SAE mode
-    with pytest.raises(ValueError, match="multi-SAE mode"):
-        _ = trainer.sae
-    with pytest.raises(ValueError, match="multi-SAE mode"):
-        _ = trainer.optimizer
-    with pytest.raises(ValueError, match="multi-SAE mode"):
-        _ = trainer.feature_sparsity
-
     # Test training
     result = trainer.fit()
     assert isinstance(result, dict)
@@ -799,7 +797,7 @@ def test_multi_sae_checkpoint_saves_per_sae_subdirs(tmp_path: Path):
         assert (sae_dir / "cfg.json").exists()
         assert (sae_dir / "sparsity.safetensors").exists()
         assert (sae_dir / "trainer_state.pt").exists()
+        assert (sae_dir / "activation_scaler.json").exists()
 
-    # Check shared directory
-    assert (checkpoint_dir / "shared" / "activation_scaler.json").exists()
+    # Check shared directory (only has global trainer state for multi-SAE mode)
     assert (checkpoint_dir / "shared" / "global_trainer_state.pt").exists()

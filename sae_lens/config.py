@@ -99,7 +99,7 @@ class LoggingConfig:
     ) -> None:
         # Avoid wandb saving errors such as:
         #   ValueError: Artifact name may only contain alphanumeric characters, dashes, underscores, and dots. Invalid name: sae_google/gemma-2b_etc
-        sae_name = trainer.sae.get_name().replace("/", "__")
+        sae_name = trainer.get_sae("default").get_name().replace("/", "__")
 
         # save model weights and cfg
         model_artifact = wandb.Artifact(

@@ -61,7 +61,7 @@ class PerSAETrainerState(Generic[T_TRAINING_SAE]):
     State maintained per-SAE during training.
 
     This encapsulates all per-SAE state including the model, optimizer,
-    schedulers, and sparsity tracking metrics.
+    schedulers, activation scaler, and sparsity tracking metrics.
     """
 
     sae: T_TRAINING_SAE
@@ -69,6 +69,7 @@ class PerSAETrainerState(Generic[T_TRAINING_SAE]):
     lr_scheduler: LRScheduler
     coefficient_schedulers: dict[str, CoefficientScheduler]
     grad_scaler: torch.amp.GradScaler
+    activation_scaler: ActivationScaler
 
     # Sparsity tracking
     act_freq_scores: torch.Tensor
@@ -114,7 +115,6 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
     """
 
     data_provider: DataProvider
-    activation_scaler: ActivationScaler
     evaluator: Evaluator[T_TRAINING_SAE] | None
 
     # Internal state
@@ -152,7 +152,6 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
     ) -> None:
         self.data_provider = data_provider
         self.evaluator = evaluator
-        self.activation_scaler = ActivationScaler()
         self.save_checkpoint_fn = save_checkpoint_fn
         self.cfg = cfg
 
@@ -161,6 +160,8 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
 
         # Normalize input to dict
         if isinstance(sae, dict):
+            if not sae:
+                raise ValueError("sae dict cannot be empty")
             self._input_was_single_sae = False
             sae_dict = sae
         else:
@@ -243,6 +244,7 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
             lr_scheduler=lr_scheduler,
             coefficient_schedulers=coefficient_schedulers,
             grad_scaler=grad_scaler,
+            activation_scaler=ActivationScaler(),
             act_freq_scores=torch.zeros(sae.cfg.d_sae, device=self.cfg.device),
             n_forward_passes_since_fired=torch.zeros(
                 sae.cfg.d_sae, device=self.cfg.device
@@ -268,123 +270,7 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
             )
             self._wandb_runs[sae_key] = run
 
-    # Backward compatibility properties for single-SAE mode
-    @property
-    def sae(self) -> T_TRAINING_SAE:
-        """Get the SAE (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError(
-                "Cannot access .sae property in multi-SAE mode. "
-                "Use .get_sae(key) or iterate over .sae_keys instead."
-            )
-        return self._sae_states["default"].sae
-
-    @property
-    def optimizer(self) -> Adam:
-        """Get the optimizer (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .optimizer in multi-SAE mode.")
-        return self._sae_states["default"].optimizer
-
-    @property
-    def lr_scheduler(self) -> LRScheduler:
-        """Get the learning rate scheduler (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .lr_scheduler in multi-SAE mode.")
-        return self._sae_states["default"].lr_scheduler
-
-    @property
-    def coefficient_schedulers(self) -> dict[str, CoefficientScheduler]:
-        """Get coefficient schedulers (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .coefficient_schedulers in multi-SAE mode.")
-        return self._sae_states["default"].coefficient_schedulers
-
-    @property
-    def act_freq_scores(self) -> torch.Tensor:
-        """Get activation frequency scores (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .act_freq_scores in multi-SAE mode.")
-        return self._sae_states["default"].act_freq_scores
-
-    @act_freq_scores.setter
-    def act_freq_scores(self, value: torch.Tensor) -> None:
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot set .act_freq_scores in multi-SAE mode.")
-        self._sae_states["default"].act_freq_scores = value
-
-    @property
-    def n_forward_passes_since_fired(self) -> torch.Tensor:
-        """Get forward passes since fired (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError(
-                "Cannot access .n_forward_passes_since_fired in multi-SAE mode."
-            )
-        return self._sae_states["default"].n_forward_passes_since_fired
-
-    @n_forward_passes_since_fired.setter
-    def n_forward_passes_since_fired(self, value: torch.Tensor) -> None:
-        if not self._input_was_single_sae:
-            raise ValueError(
-                "Cannot set .n_forward_passes_since_fired in multi-SAE mode."
-            )
-        self._sae_states["default"].n_forward_passes_since_fired = value
-
-    @property
-    def n_frac_active_samples(self) -> int:
-        """Get number of samples for fractional activity (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .n_frac_active_samples in multi-SAE mode.")
-        return self._sae_states["default"].n_frac_active_samples
-
-    @n_frac_active_samples.setter
-    def n_frac_active_samples(self, value: int) -> None:
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot set .n_frac_active_samples in multi-SAE mode.")
-        self._sae_states["default"].n_frac_active_samples = value
-
-    @property
-    def started_fine_tuning(self) -> bool:
-        """Get fine-tuning status (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .started_fine_tuning in multi-SAE mode.")
-        return self._sae_states["default"].started_fine_tuning
-
-    @started_fine_tuning.setter
-    def started_fine_tuning(self, value: bool) -> None:
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot set .started_fine_tuning in multi-SAE mode.")
-        self._sae_states["default"].started_fine_tuning = value
-
-    @property
-    def grad_scaler(self) -> torch.amp.GradScaler:
-        """Get gradient scaler (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .grad_scaler in multi-SAE mode.")
-        return self._sae_states["default"].grad_scaler
-
-    @property
-    def feature_sparsity(self) -> torch.Tensor:
-        """Get feature sparsity (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .feature_sparsity in multi-SAE mode.")
-        return self._sae_states["default"].feature_sparsity()
-
-    @property
-    def log_feature_sparsity(self) -> torch.Tensor:
-        """Get log feature sparsity (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .log_feature_sparsity in multi-SAE mode.")
-        return self._sae_states["default"].log_feature_sparsity()
-
-    @property
-    def dead_neurons(self) -> torch.Tensor:
-        """Get dead neurons mask (single-SAE mode only)."""
-        if not self._input_was_single_sae:
-            raise ValueError("Cannot access .dead_neurons in multi-SAE mode.")
-        return self._sae_states["default"].dead_neurons(self.cfg.dead_feature_window)
-
-    # Multi-SAE mode accessors
+    # SAE accessors
     @property
     def sae_keys(self) -> list[str]:
         """Get list of SAE keys."""
@@ -414,14 +300,14 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
             desc="Training SAE" if self._input_was_single_sae else "Training SAEs",
         )
 
-        # Handle activation normalization (use first SAE's config)
-        first_state = next(iter(self._sae_states.values()))
-        if first_state.sae.cfg.normalize_activations == "expected_average_only_in":
-            self.activation_scaler.estimate_scaling_factor(
-                d_in=first_state.sae.cfg.d_in,
-                data_provider=self.data_provider,
-                n_batches_for_norm_estimate=int(1e3),
-            )
+        # Handle activation normalization per SAE
+        for state in self._sae_states.values():
+            if state.sae.cfg.normalize_activations == "expected_average_only_in":
+                state.activation_scaler.estimate_scaling_factor(
+                    d_in=state.sae.cfg.d_in,
+                    data_provider=self.data_provider,
+                    n_batches_for_norm_estimate=int(1e3),
+                )
 
         # Train loop
         while self.n_training_samples < self.cfg.total_training_samples:
@@ -429,11 +315,11 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
             first_sae = next(iter(self._sae_states.values())).sae
             batch = next(self.data_provider).to(first_sae.device)
             self.n_training_samples += batch.shape[0]
-            scaled_batch = self.activation_scaler(batch)
 
-            # Train each SAE on the same batch
+            # Train each SAE on the same batch (each SAE applies its own scaling)
             step_outputs: dict[str, TrainStepOutput] = {}
             for sae_key, state in self._sae_states.items():
+                scaled_batch = state.activation_scaler(batch)
                 step_output = self._train_step_for_sae(
                     sae_key=sae_key,
                     state=state,
@@ -451,12 +337,12 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
             self._update_pbar(step_outputs, pbar)
 
         # Fold activation norm scaling factor into each SAE
-        if self.activation_scaler.scaling_factor is not None:
-            for state in self._sae_states.values():
+        for state in self._sae_states.values():
+            if state.activation_scaler.scaling_factor is not None:
                 state.sae.fold_activation_norm_scaling_factor(
-                    self.activation_scaler.scaling_factor
+                    state.activation_scaler.scaling_factor
                 )
-            self.activation_scaler.scaling_factor = None
+                state.activation_scaler.scaling_factor = None
 
         if self.cfg.save_final_checkpoint:
             self.save_checkpoint(checkpoint_name=f"final_{self.n_training_samples}")
@@ -566,7 +452,7 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
         for sae_key, state in self._sae_states.items():
             state.sae.eval()
             eval_metrics = (
-                self.evaluator(state.sae, self.data_provider, self.activation_scaler)
+                self.evaluator(state.sae, self.data_provider, state.activation_scaler)
                 if self.evaluator is not None
                 else {}
             )
@@ -632,8 +518,8 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
     @torch.no_grad()
     def _build_sparsity_log_dict_for_sae(
         self,
-        sae_key: str,
-        state: PerSAETrainerState[T_TRAINING_SAE],  # noqa: ARG002
+        sae_key: str,  # noqa: ARG002
+        state: PerSAETrainerState[T_TRAINING_SAE],
     ) -> dict[str, Any]:
         """Build sparsity log dict for a single SAE."""
         log_feature_sparsity = state.log_feature_sparsity()
@@ -831,13 +717,14 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
             state_dict["n_training_steps"] = self.n_training_steps
         torch.save(state_dict, str(path / TRAINER_STATE_FILENAME))
 
-    def _save_shared_state(self, path: Path) -> None:
-        """Save state shared across all SAEs."""
-        path.mkdir(exist_ok=True, parents=True)
-        activation_scaler_path = path / ACTIVATION_SCALER_CFG_FILENAME
-        self.activation_scaler.save(str(activation_scaler_path))
+        # Save per-SAE activation scaler
+        state.activation_scaler.save(str(path / ACTIVATION_SCALER_CFG_FILENAME))
 
-        # For multi-SAE mode, also save global training progress
+    def _save_shared_state(self, path: Path) -> None:
+        """Save state shared across all SAEs (global training progress)."""
+        path.mkdir(exist_ok=True, parents=True)
+
+        # For multi-SAE mode, save global training progress
         if not self._input_was_single_sae:
             torch.save(
                 {
@@ -864,25 +751,28 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
         """
         Load trainer state from a checkpoint.
 
-        Automatically detects whether the checkpoint is single-SAE or multi-SAE format.
+        Only single-SAE checkpoint loading is currently supported.
         """
         checkpoint_path = Path(checkpoint_path)
 
         # Check if this is a multi-SAE checkpoint
         shared_dir = checkpoint_path / "shared"
 
-        if shared_dir.exists() and not self._input_was_single_sae:
-            self._load_multi_sae_state(checkpoint_path)
-        else:
-            self._load_single_sae_state(checkpoint_path)
+        if shared_dir.exists():
+            raise NotImplementedError(
+                "Resuming from multi-SAE checkpoints is not yet supported. "
+                "Multi-SAE checkpoints can be saved but not loaded."
+            )
 
-    def _load_single_sae_state(self, checkpoint_path: Path) -> None:
-        """Load single SAE checkpoint (backward compatible)."""
         if not self._input_was_single_sae:
             raise ValueError("Cannot load single-SAE checkpoint into multi-SAE trainer")
 
+        self._load_single_sae_state(checkpoint_path)
+
+    def _load_single_sae_state(self, checkpoint_path: Path) -> None:
+        """Load single SAE checkpoint (backward compatible)."""
         state = self._sae_states["default"]
-        self.activation_scaler.load(checkpoint_path / ACTIVATION_SCALER_CFG_FILENAME)
+        state.activation_scaler.load(checkpoint_path / ACTIVATION_SCALER_CFG_FILENAME)
 
         state_dict = torch.load(checkpoint_path / TRAINER_STATE_FILENAME)
         state.optimizer.load_state_dict(state_dict["optimizer"])
@@ -896,35 +786,6 @@ class SAETrainer(Generic[T_TRAINING_SAE, T_TRAINING_SAE_CONFIG]):
 
         for name, scheduler_state in state_dict["coefficient_schedulers"].items():
             state.coefficient_schedulers[name].load_state_dict(scheduler_state)
-
-    def _load_multi_sae_state(self, checkpoint_path: Path) -> None:
-        """Load multi-SAE checkpoint."""
-        # Load shared state
-        shared_dir = checkpoint_path / "shared"
-        self.activation_scaler.load(shared_dir / ACTIVATION_SCALER_CFG_FILENAME)
-
-        global_state = torch.load(shared_dir / "global_trainer_state.pt")
-        self.n_training_steps = global_state["n_training_steps"]
-        self.n_training_samples = global_state["n_training_samples"]
-
-        # Load per-SAE state
-        for sae_key, state in self._sae_states.items():
-            sae_dir = checkpoint_path / sae_key
-            if not sae_dir.exists():
-                raise ValueError(f"Checkpoint missing directory for SAE '{sae_key}'")
-
-            state_dict = torch.load(sae_dir / TRAINER_STATE_FILENAME)
-            state.optimizer.load_state_dict(state_dict["optimizer"])
-            state.lr_scheduler.load_state_dict(state_dict["lr_scheduler"])
-            state.act_freq_scores = state_dict["act_freq_scores"]
-            state.n_forward_passes_since_fired = state_dict[
-                "n_forward_passes_since_fired"
-            ]
-            state.n_frac_active_samples = state_dict["n_frac_active_samples"]
-            state.started_fine_tuning = state_dict["started_fine_tuning"]
-
-            for name, scheduler_state in state_dict["coefficient_schedulers"].items():
-                state.coefficient_schedulers[name].load_state_dict(scheduler_state)
 
     @torch.no_grad()
     def _checkpoint_if_needed(self) -> None:
