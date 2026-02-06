@@ -1185,6 +1185,9 @@
 </span><span id="__span-0-64"><a href="#__codelineno-0-64" id="__codelineno-0-64" name="__codelineno-0-64"></a>    <span class="n">dtype</span><span class="o">=</span><span class="s2">"float32"</span>
 </span><span id="__span-0-65"><a href="#__codelineno-0-65" id="__codelineno-0-65" name="__codelineno-0-65"></a><span class="p">)</span>
 </span><span id="__span-0-66"><a href="#__codelineno-0-66" id="__codelineno-0-66" name="__codelineno-0-66"></a><span class="n">sparse_autoencoder</span> <span class="o">=</span> <span class="n">LanguageModelSAETrainingRunner</span><span class="p">(</span><span class="n">cfg</span><span class="p">)</span><span class="o">.</span><span class="n">run</span><span class="p">()</span>
+</span><span id="__span-0-67"><a href="#__codelineno-0-67" id="__codelineno-0-67" name="__codelineno-0-67"></a>
+</span><span id="__span-0-68"><a href="#__codelineno-0-68" id="__codelineno-0-68" name="__codelineno-0-68"></a><span class="c1"># Save for inference</span>
+</span><span id="__span-0-69"><a href="#__codelineno-0-69" id="__codelineno-0-69" name="__codelineno-0-69"></a><span class="n">sparse_autoencoder</span><span class="o">.</span><span class="n">save_inference_model</span><span class="p">(</span><span class="s2">"path/to/save/dir"</span><span class="p">)</span>
 </span></code></pre></div>
 <p>As you can see, the training setup provides a large number of options to explore. The full list of options can be found by inspecting the <code>LanguageModelSAERunnerConfig</code> class and the specific SAE configuration class you intend to use (e.g., <code>StandardTrainingSAEConfig</code>, <code>TopKTrainingSAEConfig</code>, etc.).</p>
 <h3 id="training-batchtopk-saes">Training BatchTopk SAEs</h3>
