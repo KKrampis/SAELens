@@ -1,5 +1,6 @@
 import warnings
 from dataclasses import dataclass, field
+from typing import Generator
 
 import torch
 from typing_extensions import override
@@ -9,7 +10,7 @@ from sae_lens.saes.batchtopk_sae import (
     BatchTopKTrainingSAEConfig,
 )
 from sae_lens.saes.sae import TrainStepInput, TrainStepOutput
-from sae_lens.saes.topk_sae import _sparse_matmul_nd
+from sae_lens.saes.topk_sae import _sparse_matmul_nd, calculate_topk_aux_acts
 
 
 @dataclass
@@ -32,6 +33,9 @@ class MatryoshkaBatchTopKTrainingSAEConfig(BatchTopKTrainingSAEConfig):
         topk_threshold_lr (float): Learning rate for updating the global topk threshold.
             The threshold is updated using an exponential moving average of the minimum
             positive activation value. Defaults to 0.01.
+        use_matryoshka_aux_loss (bool): Whether to encourage dead latents to reconstruct the error
+            of just their own level rather than the error of the entire SAE. This should result in
+            better feature revival, but is slower to train. Defaults to False.
         aux_loss_coefficient (float): Coefficient for the auxiliary loss that encourages
             dead neurons to learn useful features. Inherited from TopKTrainingSAEConfig.
             Defaults to 1.0.
@@ -50,6 +54,7 @@ class MatryoshkaBatchTopKTrainingSAEConfig(BatchTopKTrainingSAEConfig):
     """
 
     matryoshka_widths: list[int] = field(default_factory=list)
+    use_matryoshka_aux_loss: bool = False
 
     @override
     @classmethod
@@ -74,15 +79,37 @@ class MatryoshkaBatchTopKTrainingSAE(BatchTopKTrainingSAE):
         super().__init__(cfg, use_error_term)
         _validate_matryoshka_config(cfg)
 
+    def _iterable_decode(
+        self, feature_acts: torch.Tensor, include_outer_loss: bool = False
+    ) -> Generator[tuple[int, torch.Tensor], None, None]:
+        inv_W_dec_norm = 1 / self.W_dec.norm(dim=-1)
+        if self.cfg.rescale_acts_by_decoder_norm:
+            # need to multiply by the inverse of the norm because division is illegal with sparse tensors
+            feature_acts = feature_acts * inv_W_dec_norm
+        widths = self.cfg.matryoshka_widths
+        prev_width = 0
+        if not include_outer_loss:
+            widths = widths[:-1]
+        decoded = self.b_dec
+        for width in widths:
+            inner_feature_acts = feature_acts[:, prev_width:width]
+            if inner_feature_acts.is_sparse:
+                decoded = (
+                    _sparse_matmul_nd(inner_feature_acts, self.W_dec[prev_width:width])
+                    + decoded
+                )
+            else:
+                decoded = inner_feature_acts @ self.W_dec[prev_width:width] + decoded
+            prev_width = width
+            yield width, self.run_time_activation_norm_fn_out(decoded)
+
     @override
     def training_forward_pass(self, step_input: TrainStepInput) -> TrainStepOutput:
         base_output = super().training_forward_pass(step_input)
-        inv_W_dec_norm = 1 / self.W_dec.norm(dim=-1)
         # the outer matryoshka level is the base SAE, so we don't need to add an extra loss for it
-        for width in self.cfg.matryoshka_widths[:-1]:
-            inner_reconstruction = self._decode_matryoshka_level(
-                base_output.feature_acts, width, inv_W_dec_norm
-            )
+        for width, inner_reconstruction in self._iterable_decode(
+            base_output.feature_acts, include_outer_loss=False
+        ):
             inner_mse_loss = (
                 self.mse_loss_fn(inner_reconstruction, step_input.sae_in)
                 .sum(dim=-1)
@@ -114,6 +141,55 @@ class MatryoshkaBatchTopKTrainingSAE(BatchTopKTrainingSAE):
             sae_out_pre = inner_feature_acts @ self.W_dec[:width] + self.b_dec
         sae_out_pre = self.run_time_activation_norm_fn_out(sae_out_pre)
         return self.reshape_fn_out(sae_out_pre, self.d_head)
+
+    @override
+    def calculate_topk_aux_loss(
+        self,
+        sae_in: torch.Tensor,
+        sae_out: torch.Tensor,
+        hidden_pre: torch.Tensor,
+        dead_neuron_mask: torch.Tensor | None,
+    ) -> torch.Tensor:
+        if not self.cfg.use_matryoshka_aux_loss:
+            return super().calculate_topk_aux_loss(
+                sae_in, sae_out, hidden_pre, dead_neuron_mask
+            )
+
+        # calculate a separate aux loss for each new matryoshka portion of the SAE
+        if dead_neuron_mask is not None and int(dead_neuron_mask.sum()) > 0:
+            k_aux = sae_in.shape[-1] // 2
+            acts = self.activation_fn(hidden_pre)
+            prev_portion = 0
+            aux_losses = []
+            for portion, partial_sae_out in self._iterable_decode(
+                acts, include_outer_loss=True
+            ):
+                partial_dead_neuron_mask = dead_neuron_mask[prev_portion:portion]
+                partial_num_dead = int(partial_dead_neuron_mask.sum())
+                if partial_num_dead == 0:
+                    continue
+
+                partial_k_aux = min(k_aux, partial_num_dead)
+                partial_hidden_pre = hidden_pre[:, prev_portion:portion]
+                residual = (sae_in - partial_sae_out).detach()
+                auxk_acts = calculate_topk_aux_acts(
+                    k_aux=partial_k_aux,
+                    hidden_pre=partial_hidden_pre,
+                    dead_neuron_mask=partial_dead_neuron_mask,
+                )
+
+                # Reduce the scale of the loss if there are a small number of dead latents
+                scale = min(partial_num_dead / partial_k_aux, 1.0)
+
+                # Encourage the top ~50% of dead latents to predict the residual of the
+                # top k living latents
+                recons = auxk_acts @ self.W_dec[prev_portion:portion] + self.b_dec
+                auxk_loss = (recons - residual).pow(2).sum(dim=-1).mean()
+                aux_losses.append(scale * auxk_loss)
+                prev_portion = portion
+            stacked_losses = torch.stack(aux_losses)
+            return self.cfg.aux_loss_coefficient * stacked_losses.sum()
+        return sae_out.new_tensor(0.0)
 
 
 def _validate_matryoshka_config(cfg: MatryoshkaBatchTopKTrainingSAEConfig) -> None:
