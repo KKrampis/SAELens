@@ -159,18 +159,19 @@ class MatryoshkaBatchTopKTrainingSAE(BatchTopKTrainingSAE):
         if dead_neuron_mask is not None and int(dead_neuron_mask.sum()) > 0:
             k_aux = sae_in.shape[-1] // 2
             acts = self.activation_fn(hidden_pre)
-            prev_portion = 0
+            prev_width = 0
             aux_losses = []
-            for portion, partial_sae_out in self._iterable_decode(
+            for width, partial_sae_out in self._iterable_decode(
                 acts, include_outer_loss=True
             ):
-                partial_dead_neuron_mask = dead_neuron_mask[prev_portion:portion]
+                partial_dead_neuron_mask = dead_neuron_mask[prev_width:width]
                 partial_num_dead = int(partial_dead_neuron_mask.sum())
                 if partial_num_dead == 0:
+                    prev_width = width
                     continue
 
                 partial_k_aux = min(k_aux, partial_num_dead)
-                partial_hidden_pre = hidden_pre[:, prev_portion:portion]
+                partial_hidden_pre = hidden_pre[:, prev_width:width]
                 residual = (sae_in - partial_sae_out).detach()
                 auxk_acts = calculate_topk_aux_acts(
                     k_aux=partial_k_aux,
@@ -183,10 +184,10 @@ class MatryoshkaBatchTopKTrainingSAE(BatchTopKTrainingSAE):
 
                 # Encourage the top ~50% of dead latents to predict the residual of the
                 # top k living latents
-                recons = auxk_acts @ self.W_dec[prev_portion:portion] + self.b_dec
+                recons = auxk_acts @ self.W_dec[prev_width:width] + self.b_dec
                 auxk_loss = (recons - residual).pow(2).sum(dim=-1).mean()
                 aux_losses.append(scale * auxk_loss)
-                prev_portion = portion
+                prev_width = width
             stacked_losses = torch.stack(aux_losses)
             return self.cfg.aux_loss_coefficient * stacked_losses.sum()
         return sae_out.new_tensor(0.0)
