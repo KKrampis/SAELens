@@ -48,6 +48,12 @@ from .transcoder import (
     Transcoder,
     TranscoderConfig,
 )
+from .grouped_latent_sae import GroupedLatentSAE
+from .manifold_parametric_sae import (
+    ManifoldParametricSAE,
+    CircularManifoldModule,
+    SphericalManifoldModule,
+)
 
 __all__ = [
     "SAE",
@@ -88,4 +94,8 @@ __all__ = [
     "MatchingPursuitTrainingSAE",
     "MatchingPursuitSAEConfig",
     "MatchingPursuitTrainingSAEConfig",
+    "GroupedLatentSAE",
+    "ManifoldParametricSAE",
+    "CircularManifoldModule",
+    "SphericalManifoldModule",
 ]

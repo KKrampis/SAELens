@@ -111,6 +111,32 @@ from sae_lens.synthetic.upload_synthetic_model import (
 )
 from sae_lens.util import cosine_similarities
 
+# Manifold features
+from sae_lens.synthetic.manifolds import (
+    ManifoldType,
+    ManifoldConfig,
+    ManifoldFeatureDictionary,
+    generate_circular_manifold,
+    generate_spherical_manifold,
+    generate_toroidal_manifold,
+    embed_manifold_in_high_dimensional_space,
+    compute_geodesic_distance_circular,
+    compute_geodesic_distance_spherical,
+)
+from sae_lens.synthetic.manifold_evaluation import (
+    ManifoldAlignmentResult,
+    TopologyPreservationResult,
+    ComprehensiveManifoldEvaluation,
+    detect_manifold_clusters_via_coactivation,
+    analyze_decoder_subspace_geometry,
+    measure_circularity,
+    measure_sphericity,
+    compute_manifold_alignment_score,
+    compute_topology_preservation_score,
+    compute_manifold_aware_mcc,
+    evaluate_manifold_sae,
+)
+
 __all__ = [
     # Main classes
     "FeatureDictionary",
@@ -196,4 +222,26 @@ __all__ = [
     "plot_sae_feature_similarity",
     # HuggingFace utilities
     "upload_synthetic_model_to_huggingface",
+    # Manifold features
+    "ManifoldType",
+    "ManifoldConfig",
+    "ManifoldFeatureDictionary",
+    "generate_circular_manifold",
+    "generate_spherical_manifold",
+    "generate_toroidal_manifold",
+    "embed_manifold_in_high_dimensional_space",
+    "compute_geodesic_distance_circular",
+    "compute_geodesic_distance_spherical",
+    # Manifold evaluation
+    "ManifoldAlignmentResult",
+    "TopologyPreservationResult",
+    "ComprehensiveManifoldEvaluation",
+    "detect_manifold_clusters_via_coactivation",
+    "analyze_decoder_subspace_geometry",
+    "measure_circularity",
+    "measure_sphericity",
+    "compute_manifold_alignment_score",
+    "compute_topology_preservation_score",
+    "compute_manifold_aware_mcc",
+    "evaluate_manifold_sae",
 ]
