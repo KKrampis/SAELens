@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v6.37.4 (2026-02-23)
+
+### Performance
+
+* perf: report metrics only when the metrics will be read (#652) ([`3f05736`](https://github.com/decoderesearch/SAELens/commit/3f0573694e9fbb8a0cb502f5a88456b511be95e2))
+
 ## v6.37.3 (2026-02-20)
 
 ### Fix
