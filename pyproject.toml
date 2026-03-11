@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "sae-lens"
-version = "6.36.2"
+version = "6.37.6"
 description = "Training and Analyzing Sparse Autoencoders (SAEs)"
 authors = ["Joseph Bloom"]
 readme = "README.md"
@@ -20,7 +20,7 @@ classifiers = ["Topic :: Scientific/Engineering :: Artificial Intelligence"]
 [tool.poetry.dependencies]
 python = "^3.10"
 transformer-lens = ">=2.16.1"
-transformers = "^4.38.1"
+transformers = ">=4.38.1,<6.0.0"
 plotly = ">=5.19.0"
 plotly-express = ">=0.4.1"
 datasets = ">=3.1.0"
@@ -60,7 +60,9 @@ trio = "^0.30.0"
 dictionary-learning = "^0.1.0"
 kaleido = "^1.2.0"
 ipykernel = "^7.1.0"
-transformer-lens = { version = "3.0.0b1", allow-prereleases = true }
+transformers = "^5.0.0"
+# wait until transformer-lens 3.0.0b2 is released to work with transformers v5.0.0
+# transformer-lens = { version = "3.0.0b1", allow-prereleases = true }
 
 [tool.poetry.extras]
 mamba = ["mamba-lens"]

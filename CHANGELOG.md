@@ -1,5 +1,111 @@
 # CHANGELOG
 
+## v6.37.6 (2026-02-27)
+
+### Fix
+
+* fix: add gemma 3 12b entries for neuronpedia (#655)
+
+* feat: add neuronpedia entries in pretrained_saes
+
+* fix: add neuronpedia entries for 27b-it transcoders
+
+* fix: add gemma 3 12b entries for neuronpedia ([`468b9cc`](https://github.com/decoderesearch/SAELens/commit/468b9cc89551d3677b5f1fc0ee52c06cf8cf36df))
+
+## v6.37.5 (2026-02-27)
+
+### Chore
+
+* chore: adding more exploration to the synth-sae-bench notebook (#653) ([`97784ab`](https://github.com/decoderesearch/SAELens/commit/97784abf2235a3b1c8527d93a5db8bf4d99338df))
+
+### Fix
+
+* fix: update pretrained yaml to add neuronpedia entries for gemma-3-27b-it 262k transcoders (#654)
+
+* fix: add neuronpedia entries for 27b-it transcoders ([`b185915`](https://github.com/decoderesearch/SAELens/commit/b18591515fc2efba54a6958e1ae8f6e110fc3994))
+
+## v6.37.4 (2026-02-23)
+
+### Performance
+
+* perf: report metrics only when the metrics will be read (#652) ([`3f05736`](https://github.com/decoderesearch/SAELens/commit/3f0573694e9fbb8a0cb502f5a88456b511be95e2))
+
+## v6.37.3 (2026-02-20)
+
+### Fix
+
+* fix: Handle HF ModelOutput logits in HookedProxyLM (#651) ([`110de31`](https://github.com/decoderesearch/SAELens/commit/110de3126c0e24e9e6459d5fb6a110024eb0875b))
+
+## v6.37.2 (2026-02-19)
+
+### Chore
+
+* chore: fixing broken link in docs (#649) ([`bcb817e`](https://github.com/decoderesearch/SAELens/commit/bcb817e4ec57875df57e68bc8a6f36485799d0c3))
+
+* chore: updating docs for synthsaebench (#646)
+
+* updating docs for synthsaebench
+
+* Update docs/synthsaebench.md
+
+Co-authored-by: Copilot &lt;175728472+Copilot@users.noreply.github.com&gt;
+
+* Update docs/synthetic_data.md
+
+Co-authored-by: Copilot &lt;175728472+Copilot@users.noreply.github.com&gt;
+
+* Update docs/synthetic_data.md
+
+Co-authored-by: Copilot &lt;175728472+Copilot@users.noreply.github.com&gt;
+
+* changes from CR
+
+* adding synth sae bench tutorial notebook
+
+* updating tutorial notebook
+
+* changes from CR
+
+* changes from CR
+
+* adding link to paper
+
+* changes from CR
+
+---------
+
+Co-authored-by: Copilot &lt;175728472+Copilot@users.noreply.github.com&gt; ([`d44e201`](https://github.com/decoderesearch/SAELens/commit/d44e201241a85b7263341c39fe013229804b2426))
+
+### Fix
+
+* fix: relax transformers dep to allow v5 (#650) ([`610d6e5`](https://github.com/decoderesearch/SAELens/commit/610d6e5c01686abdfc41e432728c4bf36c9409c1))
+
+## v6.37.1 (2026-02-14)
+
+### Fix
+
+* fix: fold scaling factor when loading Llama Scope SAEs (#645) ([`696d08b`](https://github.com/decoderesearch/SAELens/commit/696d08bde53b4e15f0c2c7913c5cf299a4a94d4b))
+
+## v6.37.0 (2026-02-13)
+
+### Feature
+
+* feat: Matryoshka auxiliary loss (#643)
+
+* adding matryoshka topk aux loss
+
+* adding tests
+
+* changes from CR
+
+* don&#39;t add b_dec during mat topk recons
+
+* fixing rescaling issues
+
+* changes from CR
+
+* removing unused method ([`f5c5110`](https://github.com/decoderesearch/SAELens/commit/f5c511067beef6537d4afde50e0cd8796fb33e32))
+
 ## v6.36.2 (2026-02-11)
 
 ### Fix
