@@ -3,6 +3,7 @@ import torch
 
 from sae_lens.synthetic import (
     FeatureDictionary,
+    manifold_initializer,
     orthogonal_initializer,
     orthogonalize_embeddings,
 )
@@ -227,3 +228,92 @@ def test_FeatureDictionary_bias_different_seeds_produce_different_bias():
         num_features=10, hidden_dim=8, bias=True, initializer=None, seed=43
     )
     assert not torch.allclose(fd1.bias, fd2.bias)
+
+
+def test_manifold_initializer_circle_inner_products():
+    # With 4 features at t=0, 0.25, 0.5, 0.75, the circle embedding gives
+    # [1,0], [0,1], [-1,0], [0,-1]. Inner products should be cos(2π * Δt).
+    fd = FeatureDictionary(
+        num_features=4,
+        hidden_dim=2,
+        initializer=manifold_initializer("circle", scalars=[0.0, 0.25, 0.5, 0.75]),
+    )
+    vecs = fd.feature_vectors
+    # v[0]·v[1] = cos(π/2) = 0
+    assert (vecs[0] @ vecs[1]).item() == pytest.approx(0.0, abs=1e-5)
+    # v[0]·v[2] = cos(π) = -1
+    assert (vecs[0] @ vecs[2]).item() == pytest.approx(-1.0, abs=1e-5)
+    # v[0]·v[3] = cos(3π/2) = 0
+    assert (vecs[0] @ vecs[3]).item() == pytest.approx(0.0, abs=1e-5)
+    # v[1]·v[3] = cos(π) = -1
+    assert (vecs[1] @ vecs[3]).item() == pytest.approx(-1.0, abs=1e-5)
+
+
+def test_manifold_initializer_circle_periodicity():
+    # Features at t=0 and t=1 should be identical on a circle
+    fd = FeatureDictionary(
+        num_features=2,
+        hidden_dim=2,
+        initializer=manifold_initializer("circle", scalars=[0.0, 1.0]),
+    )
+    vecs = fd.feature_vectors
+    assert torch.allclose(vecs[0], vecs[1], atol=1e-5)
+
+
+def test_manifold_initializer_helix_encodes_progression():
+    # On a helix, t=0 and t=1 are NOT identical because the z-component differs.
+    # Unlike the circle, the helix distinguishes features that are one full period apart.
+    fd = FeatureDictionary(
+        num_features=2,
+        hidden_dim=3,
+        initializer=manifold_initializer("helix", scalars=[0.0, 1.0]),
+    )
+    vecs = fd.feature_vectors.detach()
+    assert not torch.allclose(vecs[0], vecs[1], atol=1e-3)
+    # t=0 maps to [cos(0), sin(0), 0] = [1, 0, 0] (already unit norm)
+    assert torch.allclose(vecs[0], torch.tensor([1.0, 0.0, 0.0]), atol=1e-5)
+
+
+def test_manifold_initializer_vectors_are_unit_norm():
+    for manifold in ("circle", "helix"):
+        fd = FeatureDictionary(
+            num_features=20,
+            hidden_dim=8,
+            initializer=manifold_initializer(manifold),
+        )
+        norms = fd.feature_vectors.norm(dim=1)
+        assert torch.allclose(norms, torch.ones(20), atol=1e-5), manifold
+
+
+def test_manifold_initializer_hidden_dim_larger_than_native():
+    # Circle is native 2D; with hidden_dim=5, extra dims should be zero-padded.
+    # Inner products should still equal cos(2π * Δt).
+    fd = FeatureDictionary(
+        num_features=4,
+        hidden_dim=5,
+        initializer=manifold_initializer("circle", scalars=[0.0, 0.25, 0.5, 0.75]),
+    )
+    vecs = fd.feature_vectors.detach()
+    assert vecs.shape == (4, 5)
+    assert torch.allclose(vecs[:, 2:], torch.zeros(4, 3), atol=1e-6)
+    assert (vecs[0] @ vecs[2]).item() == pytest.approx(-1.0, abs=1e-5)
+
+
+def test_manifold_initializer_invalid_manifold_raises():
+    with pytest.raises(ValueError, match="manifold must be"):
+        manifold_initializer("sphere")
+
+
+def test_manifold_initializer_custom_scalars():
+    # Custom scalars allow arbitrary data (e.g. frequencies) to be placed on manifold
+    scalars = [0.1, 0.3, 0.7, 0.9]
+    fd = FeatureDictionary(
+        num_features=4,
+        hidden_dim=2,
+        initializer=manifold_initializer("circle", scalars=scalars),
+    )
+    vecs = fd.feature_vectors.detach()
+    # Verify inner product matches cos(2π * Δt) for a specific pair
+    delta_t = scalars[1] - scalars[0]
+    expected_dot = torch.cos(torch.tensor(2 * torch.pi * delta_t)).item()
+    assert (vecs[0] @ vecs[1]).item() == pytest.approx(expected_dot, abs=1e-5)
