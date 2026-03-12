@@ -41,7 +41,6 @@ from sae_lens.synthetic.evals import (
 from sae_lens.synthetic.feature_dictionary import (
     FeatureDictionary,
     FeatureDictionaryInitializer,
-    manifold_initializer,
     orthogonal_initializer,
     orthogonalize_embeddings,
 )
@@ -168,7 +167,6 @@ __all__ = [
     # Utilities
     "orthogonalize_embeddings",
     "orthogonal_initializer",
-    "manifold_initializer",
     "FeatureDictionaryInitializer",
     "cosine_similarities",
     # Statistics

@@ -33,10 +33,6 @@ pyyaml = "^6.0.1"
 typing-extensions = "^4.10.0"
 simple-parsing = "^0.1.6"
 tenacity = ">=9.0.0"
-nbclient = "^0.10.4"
-nbformat = "^5.10.4"
-nbconvert = "^7.17.0"
-ipywidgets = "^8.1.8"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.2"

@@ -123,63 +123,6 @@ def orthogonal_initializer(
     return initializer
 
 
-def manifold_initializer(
-    manifold: str = "helix",
-    scalars: list[float] | None = None,
-) -> FeatureDictionaryInitializer:
-    """
-    Initialize feature vectors by mapping scalars onto a geometric manifold.
-
-    Each scalar is mapped to a point on the manifold, giving feature vectors
-    whose inner products reflect the manifold geometry. Vectors are normalized
-    to unit length after embedding.
-
-    When hidden_dim is larger than the manifold's native dimension, the extra
-    dimensions are padded with zeros (geometry is preserved since points are
-    already unit norm). When hidden_dim is smaller, the points are truncated
-    and renormalized.
-
-    Args:
-        manifold: One of "circle" or "helix".
-
-            - "circle": Maps scalars to [cos(2πt), sin(2πt)]. Encodes
-              periodicity — features at t=0 and t=1 are identical. Inner
-              product between two features equals cos(2π(t1-t2)).
-            - "helix": Maps scalars to [cos(2πt), sin(2πt), t]. Encodes
-              both periodicity and ordered progression — features wrap around
-              but also move apart as t increases.
-
-        scalars: Values to map onto the manifold, one per feature. Defaults
-            to linspace(0, 1, num_features).
-    """
-    if manifold not in ("circle", "helix"):
-        raise ValueError(f"manifold must be 'circle' or 'helix', got {manifold!r}")
-
-    def initializer(fd: "FeatureDictionary") -> None:
-        t = (
-            torch.tensor(scalars, dtype=torch.float32)
-            if scalars is not None
-            else torch.linspace(0, 1, fd.num_features)
-        )
-        two_pi_t = 2 * torch.pi * t
-        if manifold == "circle":
-            points = torch.stack([torch.cos(two_pi_t), torch.sin(two_pi_t)], dim=1)
-        else:  # helix
-            points = torch.stack([torch.cos(two_pi_t), torch.sin(two_pi_t), t], dim=1)
-
-        native_dim = points.shape[1]
-        if fd.hidden_dim > native_dim:
-            padding = torch.zeros(fd.num_features, fd.hidden_dim - native_dim)
-            points = torch.cat([points, padding], dim=1)
-        elif fd.hidden_dim < native_dim:
-            points = points[:, : fd.hidden_dim]
-
-        points = points / points.norm(p=2, dim=1, keepdim=True).clamp(min=1e-8)
-        fd.feature_vectors.data = points.to(fd.feature_vectors.device)
-
-    return initializer
-
-
 class FeatureDictionary(nn.Module):
     """
     A feature dictionary that maps sparse feature activations to dense hidden activations.
