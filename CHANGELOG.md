@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## v6.37.7 (2026-03-13)
+
+### Fix
+
+* fix: SAETransformerBridge hook name resolution and hook_z compatibility enhancement (#657) ([`a82692e`](https://github.com/decoderesearch/SAELens/commit/a82692e65bfea1c6d602662f7c1aa55d04321114))
+
 ## v6.37.6 (2026-02-27)
 
 ### Fix
