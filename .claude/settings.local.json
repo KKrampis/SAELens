@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p notebook_outputs)",
+      "Bash(python -c \"\nimport json\nwith open(''/Users/bioitx/Documents/GitHub/SAELens/tutorials/training_saes_on_synthetic_data.ipynb'', ''r'') as f:\n    nb = json.load(f)\n    \nfor i, cell in enumerate(nb[''cells'']):\n    if cell[''cell_type''] == ''markdown'':\n        source = ''''.join(cell[''source''])\n        if source.startswith(''#''):\n            print(f''Cell {i}: {source[:50]}...'')\n\")",
+      "Bash(source saelens-env/bin/activate)",
+      "Bash(git add tutorials/training_saes_on_synthetic_data.ipynb)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd cell numbers to notebook section headers for easier reference\n\n- Added \"Cell X:\" prefixes to all markdown section headers in training_saes_on_synthetic_data.ipynb\n- Makes it easier to reference specific tutorial sections by number\n- Covers cells 1, 2, 3, 14, 17, 22, 25, 27, 29, 34, 39, 44, 46, 48, and 55\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push)",
+      "Bash(poetry run:*)",
+      "Bash(synth-sae-bench-env/bin/pip install:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
