@@ -202,6 +202,7 @@ class LanguageModelSAERunnerConfig(Generic[T_TRAINING_SAE_CONFIG]):
     dataset_trust_remote_code: bool = True
     streaming: bool = True
     is_dataset_tokenized: bool = True
+    use_chat_formatting: bool = False
     context_size: int = 128
     use_cached_activations: bool = False
     cached_activations_path: str | None = (
@@ -289,6 +290,12 @@ class LanguageModelSAERunnerConfig(Generic[T_TRAINING_SAE_CONFIG]):
                 "It is not currently used and can be safely removed from your config.",
                 DeprecationWarning,
                 stacklevel=2,
+            )
+
+        if self.use_chat_formatting and self.is_dataset_tokenized:
+            raise ValueError(
+                "use_chat_formatting and is_dataset_tokenized cannot both be True. "
+                "Chat formatting requires raw conversation data."
             )
 
         if self.use_cached_activations and self.cached_activations_path is None:
@@ -535,8 +542,14 @@ class CacheActivationsRunnerConfig:
     streaming: bool = True
     autocast_lm: bool = False
     dataset_trust_remote_code: bool | None = None
+    use_chat_formatting: bool = False
 
     def __post_init__(self):
+        if self.use_chat_formatting and self.context_size == -1:
+            raise ValueError(
+                "context_size must be explicitly set when use_chat_formatting is True."
+            )
+
         # Automatically determine context_size if dataset is tokenized
         if self.context_size == -1:
             ds = load_dataset(self.dataset_path, split="train", streaming=True)
@@ -651,6 +664,7 @@ class PretokenizeRunnerConfig:
     num_proc: int = 4
     context_size: int = 128
     column_name: str = "text"
+    use_chat_formatting: bool = False
     shuffle: bool = True
     seed: int | None = None
     streaming: bool = False

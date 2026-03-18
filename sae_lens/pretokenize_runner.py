@@ -1,10 +1,11 @@
 import io
 import json
 import sys
+import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import torch
 from datasets import Dataset, DatasetDict, load_dataset
@@ -14,7 +15,10 @@ from typing_extensions import deprecated
 
 from sae_lens import __version__
 from sae_lens.config import PretokenizeRunnerConfig
-from sae_lens.tokenization_and_batching import concat_and_batch_sequences
+from sae_lens.tokenization_and_batching import (
+    concat_and_batch_sequences,
+    tokenize_with_chat_template,
+)
 
 
 @dataclass
@@ -37,6 +41,9 @@ class PretokenizedDatasetMetadata:
     begin_sequence_token: int | Literal["bos", "eos", "sep"] | None
     sequence_separator_token: int | Literal["bos", "eos", "sep"] | None
     disable_concat_sequences: bool
+    use_chat_formatting: bool = (
+        False  # whether conversations were tokenized via apply_chat_template
+    )
 
 
 def metadata_from_config(cfg: PretokenizeRunnerConfig) -> PretokenizedDatasetMetadata:
@@ -55,6 +62,7 @@ def metadata_from_config(cfg: PretokenizeRunnerConfig) -> PretokenizedDatasetMet
         begin_sequence_token=cfg.begin_sequence_token,
         sequence_separator_token=cfg.sequence_separator_token,
         disable_concat_sequences=cfg.disable_concat_sequences,
+        use_chat_formatting=cfg.use_chat_formatting,
     )
 
 
@@ -75,17 +83,34 @@ def get_special_token_from_cfg(
     raise ValueError(f"Invalid token type: {cfg_token}")
 
 
+def _tokenize_example(
+    example: Any,
+    tokenizer: PreTrainedTokenizerBase,
+    use_chat_formatting: bool,
+) -> torch.Tensor:
+    if use_chat_formatting:
+        if isinstance(example, str):
+            warnings.warn(
+                "use_chat_formatting is True but column contains strings. "
+                "Wrapping as single user messages.",
+                stacklevel=1,
+            )
+            example = [{"role": "user", "content": example}]
+        return tokenize_with_chat_template(example, tokenizer)
+    return cast(torch.Tensor, tokenizer.encode(example, return_tensors="pt")[0])
+
+
 def pretokenize_dataset(
     dataset: Dataset,
     tokenizer: PreTrainedTokenizerBase,
     cfg: PretokenizeRunnerConfig,
 ):
-    def process_examples(examples: dict[str, list[str]]):
+    def process_examples(examples: dict[str, list[Any]]):
         tokens_iterator = cast(
             Iterator[torch.Tensor],
             (
-                tokenizer.encode(text, return_tensors="pt")[0]
-                for text in examples[cfg.column_name]
+                _tokenize_example(item, tokenizer, cfg.use_chat_formatting)
+                for item in examples[cfg.column_name]
             ),
         )
         return {

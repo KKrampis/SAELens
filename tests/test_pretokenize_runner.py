@@ -1,9 +1,11 @@
 import json
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
 import pytest
+import torch
 from datasets import Dataset, IterableDataset
 from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
@@ -11,6 +13,7 @@ from sae_lens import __version__
 from sae_lens.config import PretokenizeRunnerConfig
 from sae_lens.pretokenize_runner import (
     PretokenizeRunner,
+    _tokenize_example,
     get_special_token_from_cfg,
     pretokenize_dataset,
 )
@@ -264,3 +267,108 @@ def test_pretokenize_runner_raises_error_when_num_proc_is_greater_than_1_and_str
     )
     with pytest.raises(ValueError):
         PretokenizeRunner(cfg).run()
+
+
+def test_pretokenize_dataset_with_chat_formatting(
+    ts_tokenizer: PreTrainedTokenizerBase,
+):
+    ts_tokenizer.chat_template = (
+        "{% for message in messages %}"
+        "{{ '<|' + message['role'] + '|>' + message['content'] + '<|end|>' }}"
+        "{% endfor %}"
+    )
+
+    conversation = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi there"},
+    ]
+    dataset = Dataset.from_list([{"conversation": conversation}] * 30)
+    cfg = PretokenizeRunnerConfig(
+        context_size=10,
+        num_proc=1,
+        shuffle=False,
+        column_name="conversation",
+        use_chat_formatting=True,
+        begin_batch_token=None,
+        sequence_separator_token=None,
+        begin_sequence_token=None,
+    )
+
+    tokenized_dataset = cast(Any, pretokenize_dataset(dataset, ts_tokenizer, cfg))
+    assert np.array(tokenized_dataset["input_ids"]).shape[1] == cfg.context_size
+
+    decoded = ts_tokenizer.decode(tokenized_dataset["input_ids"][0])
+    assert "<|user|>" in decoded
+    assert "Hello" in decoded
+
+
+def test_pretokenize_dataset_with_chat_formatting_wraps_text_as_user_message(
+    ts_tokenizer: PreTrainedTokenizerBase,
+):
+    ts_tokenizer.chat_template = (
+        "{% for message in messages %}"
+        "{{ '<|' + message['role'] + '|>' + message['content'] + '<|end|>' }}"
+        "{% endfor %}"
+    )
+
+    dataset = Dataset.from_list([{"text": "hello world"}] * 30)
+    cfg = PretokenizeRunnerConfig(
+        context_size=10,
+        num_proc=1,
+        shuffle=False,
+        column_name="text",
+        use_chat_formatting=True,
+        begin_batch_token=None,
+        sequence_separator_token=None,
+        begin_sequence_token=None,
+    )
+
+    tokenized_dataset = cast(Any, pretokenize_dataset(dataset, ts_tokenizer, cfg))
+    assert np.array(tokenized_dataset["input_ids"]).shape[1] == cfg.context_size
+
+    decoded = ts_tokenizer.decode(tokenized_dataset["input_ids"][0])
+    assert "<|user|>" in decoded
+    assert "hello world" in decoded
+
+
+def test_tokenize_example_with_conversation_does_not_warn(
+    ts_tokenizer: PreTrainedTokenizerBase,
+):
+    ts_tokenizer.chat_template = (
+        "{% for message in messages %}"
+        "{{ '<|' + message['role'] + '|>' + message['content'] + '<|end|>' }}"
+        "{% endfor %}"
+    )
+
+    conversation = [{"role": "user", "content": "Hello"}]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        tokens = _tokenize_example(conversation, ts_tokenizer, use_chat_formatting=True)
+
+    assert tokens.dtype == torch.long
+    decoded = ts_tokenizer.decode(tokens)
+    assert "<|user|>" in decoded
+    assert "Hello" in decoded
+
+
+def test_tokenize_example_with_string_warns(
+    ts_tokenizer: PreTrainedTokenizerBase,
+):
+    ts_tokenizer.chat_template = (
+        "{% for message in messages %}"
+        "{{ '<|' + message['role'] + '|>' + message['content'] + '<|end|>' }}"
+        "{% endfor %}"
+    )
+
+    with pytest.warns(
+        UserWarning,
+        match="use_chat_formatting is True but column contains strings",
+    ):
+        tokens = _tokenize_example(
+            "hello world", ts_tokenizer, use_chat_formatting=True
+        )
+
+    decoded = ts_tokenizer.decode(tokens)
+    assert "<|user|>" in decoded
+    assert "hello world" in decoded
