@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## v6.39.0 (2026-03-19)
+
+### Chore
+
+* chore: document how to customize feature geometry in synth SAE stuff (#664) ([`d9d1e28`](https://github.com/decoderesearch/SAELens/commit/d9d1e281486bc0c6e3d7b364525967a756b7686e))
+
+### Feature
+
+* feat: Add parameter to set number of batches used for norm estimation (#662) ([`b321814`](https://github.com/decoderesearch/SAELens/commit/b321814678c402d46ea059f671dab5f9b124372d))
+
 ## v6.38.0 (2026-03-14)
 
 ### Feature

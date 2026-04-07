@@ -56,6 +56,7 @@ def test_LanguageModelSAETrainingRunner_runs_and_saves_all_architectures(
         exclude_special_tokens=True,
         save_final_checkpoint=True,  # Enable final checkpoint for this test
         output_path=str(tmp_path / "test_output"),
+        n_batches_for_norm_estimate=100,
     )
     runner = LanguageModelSAETrainingRunner(cfg, override_model=ts_model)
     sae = runner.run()

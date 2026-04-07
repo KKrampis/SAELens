@@ -188,6 +188,7 @@ class LanguageModelSAERunnerConfig(Generic[T_TRAINING_SAE_CONFIG]):
         sae_lens_version (str): The version of the sae_lens library.
         sae_lens_training_version (str): The version of the sae_lens training library.
         exclude_special_tokens (bool | list[int]): Whether to exclude special tokens from the activations. If True, excludes all special tokens. If a list of ints, excludes those token IDs.
+        n_batches_for_norm_estimate (int): How many batches to use to estimate the norm. Default value is 1000, though it may be helpful to lower this if you use a larger batch size to reduce loading time.
     """
 
     sae: T_TRAINING_SAE_CONFIG
@@ -282,6 +283,7 @@ class LanguageModelSAERunnerConfig(Generic[T_TRAINING_SAE_CONFIG]):
     sae_lens_version: str = field(default_factory=lambda: __version__)
     sae_lens_training_version: str = field(default_factory=lambda: __version__)
     exclude_special_tokens: bool | list[int] = False
+    n_batches_for_norm_estimate: int = 1000  # Default value is 1k, helpful to decrease this if you use a larger batch size
 
     def __post_init__(self):
         if self.hook_eval != "NOT_IN_USE":
@@ -469,6 +471,7 @@ class LanguageModelSAERunnerConfig(Generic[T_TRAINING_SAE_CONFIG]):
             dead_feature_window=self.dead_feature_window,
             feature_sampling_window=self.feature_sampling_window,
             logger=self.logger,
+            n_batches_for_norm_estimate=self.n_batches_for_norm_estimate,
         )
 
 
@@ -690,24 +693,27 @@ class PretokenizeRunnerConfig:
 
 @dataclass
 class SAETrainerConfig:
-    n_checkpoints: int
-    checkpoint_path: str | None
-    save_final_checkpoint: bool
     total_training_samples: int
-    device: str
-    autocast: bool
-    lr: float
-    lr_end: float | None
-    lr_scheduler_name: str
-    lr_warm_up_steps: int
-    adam_beta1: float
-    adam_beta2: float
-    lr_decay_steps: int
-    n_restart_cycles: int
     train_batch_size_samples: int
-    dead_feature_window: int
-    feature_sampling_window: int
-    logger: LoggingConfig
+    lr: float = 3e-4
+    lr_end: float | None = None
+    lr_scheduler_name: str = "constant"
+    lr_warm_up_steps: int = 0
+    lr_decay_steps: int = 0
+    n_restart_cycles: int = 1
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.999
+    device: str = "cpu"
+    autocast: bool = False
+    dead_feature_window: int = 1000
+    feature_sampling_window: int = 2000
+    n_checkpoints: int = 0
+    checkpoint_path: str | None = None
+    save_final_checkpoint: bool = False
+    logger: LoggingConfig = field(
+        default_factory=lambda: LoggingConfig(log_to_wandb=False)
+    )
+    n_batches_for_norm_estimate: int = 1000
 
     @property
     def total_training_steps(self) -> int:
