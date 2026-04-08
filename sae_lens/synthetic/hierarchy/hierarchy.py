@@ -14,6 +14,10 @@ from sae_lens.synthetic.hierarchy.modifier import (
     hierarchy_modifier,
 )
 from sae_lens.synthetic.hierarchy.node import HierarchyNode
+from sae_lens.synthetic.semantic_labels import (
+    ConceptNode,
+    load_semantic_dictionary,
+)
 
 
 @dataclass
@@ -46,6 +50,9 @@ class Hierarchy:
                 "mutually_exclusive_children": node.mutually_exclusive_children,
                 "scale_children_by_parent": node.scale_children_by_parent,
                 "feature_id": node.feature_id,
+                "label": node.label,
+                "alpha": node.alpha,
+                "beta": node.beta,
                 "children": [node_to_dict(c) for c in node.children],
             }
 
@@ -69,6 +76,9 @@ class Hierarchy:
                     "scale_children_by_parent", False
                 ),
                 feature_id=node_dict.get("feature_id"),
+                label=node_dict.get("label"),
+                alpha=float(node_dict.get("alpha", 0.0)),
+                beta=float(node_dict.get("beta", 1.0)),
             )
 
         roots = [dict_to_node(r) for r in d["roots"]]
@@ -184,6 +194,22 @@ def generate_hierarchy(
     Returns:
         Hierarchy with roots and modifier function
     """
+    if config.semantic_dictionary_path is not None:
+        concept_roots = load_semantic_dictionary(config.semantic_dictionary_path)
+        roots: list[HierarchyNode] = []
+        next_index = 0
+        for concept_root in concept_roots:
+            node, next_index = concept_node_to_hierarchy_node(
+                concept_root, next_index, config.scale_children_by_parent
+            )
+            roots.append(node)
+        if next_index > num_features:
+            raise ValueError(
+                f"JSON defines {next_index} nodes but num_features={num_features}"
+            )
+        modifier = hierarchy_modifier(roots) if roots else None
+        return Hierarchy(roots=roots, modifier=modifier)
+
     if config.total_root_nodes == 0:
         return Hierarchy(roots=[], modifier=None)
 
@@ -291,3 +317,46 @@ def generate_hierarchy(
         roots=roots,
         modifier=modifier,
     )
+
+
+def concept_node_to_hierarchy_node(
+    node: ConceptNode,
+    feature_index_start: int,
+    scale_children_by_parent: bool = False,
+) -> tuple[HierarchyNode, int]:
+    """
+    Recursively convert a ConceptNode tree to a HierarchyNode tree.
+
+    Feature indices are assigned depth-first (root first, then children
+    left to right). The root node receives feature_index_start.
+
+    Args:
+        node: Root of the concept tree to convert.
+        feature_index_start: First feature index to assign.
+        scale_children_by_parent: Passed through to all HierarchyNodes.
+
+    Returns:
+        Tuple of (hierarchy_node, next_free_index) where next_free_index is
+        the first index not used by this subtree.
+    """
+    current_index = feature_index_start
+    next_index = current_index + 1
+
+    child_nodes: list[HierarchyNode] = []
+    for child_concept in node.children:
+        child_node, next_index = concept_node_to_hierarchy_node(
+            child_concept, next_index, scale_children_by_parent
+        )
+        child_nodes.append(child_node)
+
+    hierarchy_node = HierarchyNode(
+        feature_index=current_index,
+        children=child_nodes,
+        mutually_exclusive_children=node.mutually_exclusive_children,
+        scale_children_by_parent=scale_children_by_parent,
+        label=node.label,
+        alpha=node.alpha,
+        beta=node.beta,
+    )
+
+    return hierarchy_node, next_index

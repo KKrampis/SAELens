@@ -26,7 +26,9 @@ from sae_lens.synthetic.correlation import (
 )
 from sae_lens.synthetic.feature_dictionary import (
     FeatureDictionary,
+    FeatureDictionaryInitializer,
     orthogonal_initializer,
+    semantic_initializer,
 )
 from sae_lens.synthetic.firing_magnitudes import (
     MagnitudeConfig,
@@ -153,6 +155,7 @@ class SyntheticModelConfig:
     bias: bool | float = 1.0
     dtype: str = "float32"
     seed: int | None = None
+    semantic_geometry: bool = False
 
     def __post_init__(self) -> None:
         if self.num_features < 1:
@@ -299,7 +302,12 @@ class SyntheticModel(nn.Module):
 
     def _create_hierarchy(self) -> Hierarchy | None:
         """Create hierarchy from config if configured."""
-        if self.cfg.hierarchy is None or self.cfg.hierarchy.total_root_nodes == 0:
+        if self.cfg.hierarchy is None:
+            return None
+        if (
+            self.cfg.hierarchy.semantic_dictionary_path is None
+            and self.cfg.hierarchy.total_root_nodes == 0
+        ):
             return None
 
         # Compute seed offset to avoid coupling with other random generators
@@ -330,8 +338,14 @@ class SyntheticModel(nn.Module):
 
     def _create_feature_dict(self) -> FeatureDictionary:
         """Create feature dictionary from config."""
-        initializer = None
-        if self.cfg.orthogonalization is not None:
+        use_semantic = self.cfg.semantic_geometry or (
+            self.cfg.hierarchy is not None
+            and self.cfg.hierarchy.semantic_dictionary_path is not None
+        )
+        initializer: FeatureDictionaryInitializer | None = None
+        if use_semantic and self.hierarchy is not None:
+            initializer = semantic_initializer(self.hierarchy, self.cfg.num_features)
+        elif self.cfg.orthogonalization is not None:
             initializer = orthogonal_initializer(
                 num_steps=self.cfg.orthogonalization.num_steps,
                 lr=self.cfg.orthogonalization.lr,

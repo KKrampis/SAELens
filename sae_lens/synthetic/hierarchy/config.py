@@ -34,6 +34,10 @@ class HierarchyConfig:
         scale_children_by_parent: If True, set scale_children_by_parent on all
             parent nodes. Children are scaled by parent_activation / parent_mean instead
             of binary gating. Default False.
+        semantic_dictionary_path: Optional path to a JSON file defining the hierarchy
+            topology, labels, and per-edge alpha/beta coefficients. When set, overrides
+            random hierarchy generation (total_root_nodes, branching_factor, and
+            max_depth are ignored).
     """
 
     total_root_nodes: int = 100
@@ -44,8 +48,12 @@ class HierarchyConfig:
     mutually_exclusive_max_depth: int | None = None
     compensate_probabilities: bool = False
     scale_children_by_parent: bool = False
+    semantic_dictionary_path: str | None = None
 
     def __post_init__(self) -> None:
+        if self.semantic_dictionary_path is not None:
+            # Random-generation parameters are irrelevant when loading from JSON.
+            return
         if self.total_root_nodes <= 0:
             raise ValueError("total_root_nodes must be positive")
         if isinstance(self.branching_factor, int):

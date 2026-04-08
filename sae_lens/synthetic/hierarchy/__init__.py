@@ -11,7 +11,11 @@ https://github.com/noanabeshima/matryoshka-saes/blob/main/toy_model.py
 
 from sae_lens.synthetic.activation_generator import ActivationsModifier
 from sae_lens.synthetic.hierarchy.config import HierarchyConfig
-from sae_lens.synthetic.hierarchy.hierarchy import Hierarchy, generate_hierarchy
+from sae_lens.synthetic.hierarchy.hierarchy import (
+    Hierarchy,
+    concept_node_to_hierarchy_node,
+    generate_hierarchy,
+)
 from sae_lens.synthetic.hierarchy.modifier import (
     hierarchy_modifier,
 )
@@ -22,6 +26,7 @@ __all__ = [
     "Hierarchy",
     "HierarchyConfig",
     "HierarchyNode",
+    "concept_node_to_hierarchy_node",
     "generate_hierarchy",
     "hierarchy_modifier",
 ]

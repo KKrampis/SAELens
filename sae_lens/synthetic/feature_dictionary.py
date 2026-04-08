@@ -5,11 +5,17 @@ A FeatureDictionary maps feature activations (sparse coefficients) to dense hidd
 by multiplying with a learned or constructed feature embedding matrix.
 """
 
-from typing import Callable
+from __future__ import annotations
+
+from collections import deque
+from typing import TYPE_CHECKING, Callable
 
 import torch
 from torch import nn
 from tqdm.auto import tqdm
+
+if TYPE_CHECKING:
+    from sae_lens.synthetic.hierarchy.hierarchy import Hierarchy
 
 FeatureDictionaryInitializer = Callable[["FeatureDictionary"], None]
 
@@ -213,3 +219,86 @@ class FeatureDictionary(nn.Module):
                     + self.bias
                 )
         return feature_activations @ self.feature_vectors + self.bias
+
+
+def semantic_initializer(
+    hierarchy: Hierarchy,
+    num_features: int,
+) -> FeatureDictionaryInitializer:
+    """
+    Return an initializer that encodes parent-child similarity in feature vectors.
+
+    For each node in the hierarchy, the child vector is set to:
+
+        d_child = node.alpha * d_parent + node.beta * d_perp
+
+    where d_perp is a unit vector orthogonal to d_parent (via Gram-Schmidt), then
+    the result is L2-normalized. Root nodes keep their initial random unit vectors.
+    Features not in the hierarchy are orthogonalized among themselves.
+
+    Args:
+        hierarchy: Hierarchy whose nodes carry alpha and beta values.
+        num_features: Total number of features in the dictionary.
+
+    Returns:
+        FeatureDictionaryInitializer callable.
+    """
+
+    def initializer(feature_dict: FeatureDictionary) -> None:
+        with torch.no_grad():
+            vectors = feature_dict.feature_vectors.data.clone()
+
+            # BFS: process each tree, computing child vectors from parent
+            queue: deque[tuple[object, torch.Tensor | None]] = deque()
+            for root in hierarchy.roots:
+                queue.append((root, None))
+
+            while queue:
+                node, d_parent = queue.popleft()
+                if node.feature_index is None:  # type: ignore[union-attr]
+                    for child in node.children:  # type: ignore[union-attr]
+                        queue.append((child, d_parent))
+                    continue
+
+                idx: int = node.feature_index  # type: ignore[union-attr]
+
+                if d_parent is None:
+                    # Root node: normalize and keep random direction
+                    v = vectors[idx]
+                    vectors[idx] = v / v.norm().clamp(min=1e-8)
+                else:
+                    # Child node: apply d_child = alpha * d_parent + beta * d_perp
+                    d_rand = vectors[idx]
+                    proj = (d_rand @ d_parent) * d_parent
+                    d_perp = d_rand - proj
+                    perp_norm = d_perp.norm()
+                    if perp_norm < 1e-8:
+                        # Extremely rare: random vec is nearly collinear with parent
+                        d_perp = torch.randn_like(d_rand)
+                        d_perp = d_perp - (d_perp @ d_parent) * d_parent
+                        perp_norm = d_perp.norm().clamp(min=1e-8)
+                    d_perp = d_perp / perp_norm
+
+                    alpha: float = node.alpha  # type: ignore[union-attr]
+                    beta: float = node.beta  # type: ignore[union-attr]
+                    d_child = alpha * d_parent + beta * d_perp
+                    vectors[idx] = d_child / d_child.norm().clamp(min=1e-8)
+
+                d_out = vectors[idx]
+                for child in node.children:  # type: ignore[union-attr]
+                    queue.append((child, d_out))
+
+        # Orthogonalize free features outside no_grad (optimizer needs gradients)
+        hierarchical = hierarchy.feature_indices_used
+        free = [i for i in range(num_features) if i not in hierarchical]
+        if free:
+            free_tensor = torch.stack([vectors[i] for i in free])
+            free_ortho = orthogonalize_embeddings(free_tensor)
+            with torch.no_grad():
+                for pos, idx in enumerate(free):
+                    vectors[idx] = free_ortho[pos]
+
+        with torch.no_grad():
+            feature_dict.feature_vectors.data = vectors
+
+    return initializer
