@@ -43,6 +43,12 @@ from sae_lens.synthetic.feature_dictionary import (
     FeatureDictionaryInitializer,
     orthogonal_initializer,
     orthogonalize_embeddings,
+    semantic_initializer,
+)
+from sae_lens.synthetic.hierarchy import concept_node_to_hierarchy_node
+from sae_lens.synthetic.semantic_labels import (
+    ConceptNode,
+    load_semantic_dictionary,
 )
 from sae_lens.synthetic.firing_magnitudes import (
     ConstantMagnitudeConfig,
@@ -167,7 +173,12 @@ __all__ = [
     # Utilities
     "orthogonalize_embeddings",
     "orthogonal_initializer",
+    "semantic_initializer",
     "FeatureDictionaryInitializer",
+    # Semantic dictionary
+    "ConceptNode",
+    "load_semantic_dictionary",
+    "concept_node_to_hierarchy_node",
     "cosine_similarities",
     # Statistics
     "compute_correlation_matrix_stats",

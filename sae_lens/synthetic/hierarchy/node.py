@@ -62,6 +62,9 @@ class HierarchyNode:
             ),
             scale_children_by_parent=tree_dict.get("scale_children_by_parent", False),
             feature_id=tree_dict.get("id"),
+            label=tree_dict.get("label"),
+            alpha=float(tree_dict.get("alpha", 0.0)),
+            beta=float(tree_dict.get("beta", 1.0)),
         )
 
     def __init__(
@@ -71,6 +74,9 @@ class HierarchyNode:
         mutually_exclusive_children: bool = False,
         scale_children_by_parent: bool = False,
         feature_id: str | None = None,
+        label: str | None = None,
+        alpha: float = 0.0,
+        beta: float = 1.0,
     ):
         """
         Create a new HierarchyNode.
@@ -83,12 +89,19 @@ class HierarchyNode:
             scale_children_by_parent: If True, rescale child activations by
                 parent_activation / parent_mean instead of binary gating
             feature_id: Optional identifier for debugging
+            label: Human-readable concept name (e.g. "Deceptive Reasoning")
+            alpha: Semantic similarity to parent direction (0.0 for roots). Used by
+                semantic_initializer to encode parent-child geometry.
+            beta: Orthogonal mixing weight (1.0 for roots). Typically sqrt(1 - alpha²).
         """
         self.feature_index = feature_index
         self.children = children or []
         self.mutually_exclusive_children = mutually_exclusive_children
         self.scale_children_by_parent = scale_children_by_parent
         self.feature_id = feature_id
+        self.label = label
+        self.alpha = alpha
+        self.beta = beta
 
         if self.mutually_exclusive_children and len(self.children) < 2:
             raise ValueError("Need at least 2 children for mutual exclusion")
@@ -137,6 +150,12 @@ class HierarchyNode:
         if self.scale_children_by_parent != other.scale_children_by_parent:
             return False
         if self.feature_id != other.feature_id:
+            return False
+        if self.label != other.label:
+            return False
+        if self.alpha != other.alpha:
+            return False
+        if self.beta != other.beta:
             return False
         if len(self.children) != len(other.children):
             return False
