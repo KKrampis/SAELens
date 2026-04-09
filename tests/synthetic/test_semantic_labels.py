@@ -1,5 +1,7 @@
 import json
 import math
+from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -19,7 +21,7 @@ from sae_lens.synthetic.semantic_labels import (
 )
 
 
-def _write_json(path, data):
+def _write_json(path: Path, data: Any) -> None:
     with open(path, "w") as f:
         json.dump(data, f)
 
@@ -29,7 +31,7 @@ def _write_json(path, data):
 # ---------------------------------------------------------------------------
 
 
-def test_load_semantic_dictionary_parses_simple_tree(tmp_path):
+def test_load_semantic_dictionary_parses_simple_tree(tmp_path: Path):
     _write_json(
         tmp_path / "dict.json",
         {
@@ -72,7 +74,7 @@ def test_load_semantic_dictionary_parses_simple_tree(tmp_path):
     assert root.children[1].label == "Child B"
 
 
-def test_load_semantic_dictionary_multiple_trees(tmp_path):
+def test_load_semantic_dictionary_multiple_trees(tmp_path: Path):
     _write_json(
         tmp_path / "dict.json",
         {
@@ -89,7 +91,7 @@ def test_load_semantic_dictionary_multiple_trees(tmp_path):
     assert [r.label for r in roots] == ["Tree1", "Tree2", "Tree3"]
 
 
-def test_load_semantic_dictionary_missing_required_field_raises(tmp_path):
+def test_load_semantic_dictionary_missing_required_field_raises(tmp_path: Path):
     _write_json(
         tmp_path / "dict.json",
         {"trees": [{"label": "Root", "alpha": 0.5}]},  # missing beta
@@ -98,13 +100,13 @@ def test_load_semantic_dictionary_missing_required_field_raises(tmp_path):
         load_semantic_dictionary(str(tmp_path / "dict.json"))
 
 
-def test_load_semantic_dictionary_missing_trees_key_raises(tmp_path):
+def test_load_semantic_dictionary_missing_trees_key_raises(tmp_path: Path):
     _write_json(tmp_path / "dict.json", {"nodes": []})
     with pytest.raises(ValueError, match="'trees'"):
         load_semantic_dictionary(str(tmp_path / "dict.json"))
 
 
-def test_load_semantic_dictionary_defaults_mutually_exclusive_to_false(tmp_path):
+def test_load_semantic_dictionary_defaults_mutually_exclusive_to_false(tmp_path: Path):
     _write_json(
         tmp_path / "dict.json",
         {"trees": [{"label": "Root", "alpha": 0.0, "beta": 1.0, "children": []}]},
