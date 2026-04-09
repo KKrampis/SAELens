@@ -40,8 +40,18 @@ def test_load_semantic_dictionary_parses_simple_tree(tmp_path):
                     "beta": 1.0,
                     "mutually_exclusive_children": True,
                     "children": [
-                        {"label": "Child A", "alpha": 0.7, "beta": 0.714, "children": []},
-                        {"label": "Child B", "alpha": 0.4, "beta": 0.917, "children": []},
+                        {
+                            "label": "Child A",
+                            "alpha": 0.7,
+                            "beta": 0.714,
+                            "children": [],
+                        },
+                        {
+                            "label": "Child B",
+                            "alpha": 0.4,
+                            "beta": 0.917,
+                            "children": [],
+                        },
                     ],
                 }
             ]
@@ -162,9 +172,12 @@ def test_concept_node_to_hierarchy_node_sets_mutually_exclusive():
 
 
 def test_concept_node_to_hierarchy_node_offset_start():
-    node = ConceptNode(label="A", alpha=0.0, beta=1.0, children=[
-        ConceptNode(label="B", alpha=0.5, beta=0.866, children=[])
-    ])
+    node = ConceptNode(
+        label="A",
+        alpha=0.0,
+        beta=1.0,
+        children=[ConceptNode(label="B", alpha=0.5, beta=0.866, children=[])],
+    )
     root, next_idx = concept_node_to_hierarchy_node(node, feature_index_start=10)
     assert root.feature_index == 10
     assert root.children[0].feature_index == 11
@@ -207,7 +220,9 @@ def test_semantic_initializer_grandchild_encodes_alpha():
     beta_gc = math.sqrt(1 - alpha_gc**2)
 
     grandchild = HierarchyNode(feature_index=2, alpha=alpha_gc, beta=beta_gc)
-    child = HierarchyNode(feature_index=1, alpha=alpha_child, beta=beta_child, children=[grandchild])
+    child = HierarchyNode(
+        feature_index=1, alpha=alpha_child, beta=beta_child, children=[grandchild]
+    )
     root = HierarchyNode(feature_index=0, children=[child], alpha=0.0, beta=1.0)
     hierarchy = Hierarchy(roots=[root], modifier=None)
 
