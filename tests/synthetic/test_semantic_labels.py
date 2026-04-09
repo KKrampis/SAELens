@@ -4,8 +4,14 @@ import math
 import pytest
 import torch
 
-from sae_lens.synthetic.feature_dictionary import FeatureDictionary, semantic_initializer
-from sae_lens.synthetic.hierarchy.hierarchy import Hierarchy, concept_node_to_hierarchy_node
+from sae_lens.synthetic.feature_dictionary import (
+    FeatureDictionary,
+    semantic_initializer,
+)
+from sae_lens.synthetic.hierarchy.hierarchy import (
+    Hierarchy,
+    concept_node_to_hierarchy_node,
+)
 from sae_lens.synthetic.hierarchy.node import HierarchyNode
 from sae_lens.synthetic.semantic_labels import (
     ConceptNode,
@@ -155,7 +161,7 @@ def test_concept_node_to_hierarchy_node_sets_mutually_exclusive():
     assert h_node.mutually_exclusive_children is True
 
 
-def test_concept_node_to_hierarchy_node_offset_start(tmp_path):
+def test_concept_node_to_hierarchy_node_offset_start():
     node = ConceptNode(label="A", alpha=0.0, beta=1.0, children=[
         ConceptNode(label="B", alpha=0.5, beta=0.866, children=[])
     ])

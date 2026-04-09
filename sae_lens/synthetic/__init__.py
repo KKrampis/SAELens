@@ -45,11 +45,6 @@ from sae_lens.synthetic.feature_dictionary import (
     orthogonalize_embeddings,
     semantic_initializer,
 )
-from sae_lens.synthetic.hierarchy import concept_node_to_hierarchy_node
-from sae_lens.synthetic.semantic_labels import (
-    ConceptNode,
-    load_semantic_dictionary,
-)
 from sae_lens.synthetic.firing_magnitudes import (
     ConstantMagnitudeConfig,
     ExponentialMagnitudeConfig,
@@ -76,6 +71,7 @@ from sae_lens.synthetic.hierarchy import (
     Hierarchy,
     HierarchyConfig,
     HierarchyNode,
+    concept_node_to_hierarchy_node,
     generate_hierarchy,
     hierarchy_modifier,
 )
@@ -85,6 +81,10 @@ from sae_lens.synthetic.plotting import (
     find_best_feature_ordering_across_saes,
     find_best_feature_ordering_from_sae,
     plot_sae_feature_similarity,
+)
+from sae_lens.synthetic.semantic_labels import (
+    ConceptNode,
+    load_semantic_dictionary,
 )
 from sae_lens.synthetic.stats import (
     CorrelationMatrixStats,
