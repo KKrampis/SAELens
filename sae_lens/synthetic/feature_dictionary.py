@@ -8,7 +8,8 @@ by multiplying with a learned or constructed feature embedding matrix.
 from __future__ import annotations
 
 from collections import deque
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -117,7 +118,7 @@ def orthogonal_initializer(
     show_progress: bool = False,
     chunk_size: int = 1024,
 ) -> FeatureDictionaryInitializer:
-    def initializer(feature_dict: "FeatureDictionary") -> None:
+    def initializer(feature_dict: FeatureDictionary) -> None:
         feature_dict.feature_vectors.data = orthogonalize_embeddings(
             feature_dict.feature_vectors,
             num_steps=num_steps,
