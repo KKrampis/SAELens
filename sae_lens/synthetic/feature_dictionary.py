@@ -7,6 +7,7 @@ by multiplying with a learned or constructed feature embedding matrix.
 
 from __future__ import annotations
 
+import math
 from collections import deque
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -281,7 +282,7 @@ def semantic_initializer(
                     d_perp = d_perp / perp_norm
 
                     alpha: float = node.alpha  # type: ignore[union-attr]
-                    beta: float = node.beta  # type: ignore[union-attr]
+                    beta: float = math.sqrt(1.0 - alpha**2)
                     d_child = alpha * d_parent + beta * d_perp
                     vectors[idx] = d_child / d_child.norm().clamp(min=1e-8)
 

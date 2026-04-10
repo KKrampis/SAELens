@@ -1,0 +1,15 @@
+{
+  "true_l0": 2.71337,
+  "sae_l0": 15.0,
+  "dead_latents": 72,
+  "shrinkage": 0.9846601873779297,
+  "explained_variance": 0.970902244564978,
+  "mcc": 0.7321425080299377,
+  "uniqueness": 0.7734375,
+  "classification": {
+    "precision": 0.37213587760925293,
+    "recall": 0.7829880714416504,
+    "f1_score": 0.4751431345939636,
+    "accuracy": 0.9728387594223022
+  }
+}

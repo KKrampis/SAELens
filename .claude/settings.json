@@ -3,7 +3,8 @@
     "allow": [
       "Bash(grep -r \"feature_geometry\\\\|feature.geometry\\\\|FeatureGeometry\" /Users/bioitx/Documents/GitHub/SAELens --include=*.ipynb --include=*.py --include=*.md)",
       "Bash(poetry run:*)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "Bash(gh run:*)"
     ]
   }
 }

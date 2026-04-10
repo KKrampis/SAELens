@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uvx --with mkdocs-material mike alias --push --update dev latest)",
+      "Bash(find /Users/bioitx/Documents/GitHub/SAELens -name *.json)",
+      "Bash(python3 -c \":*)"
+    ]
+  }
+}

@@ -1,0 +1,1 @@
+{"dtype": "float32", "normalize_activations": "none", "device": "cpu", "d_sae": 512, "metadata": {"sae_lens_version": "6.39.0", "sae_lens_training_version": "6.39.0"}, "d_in": 128, "reshape_activations": "none", "apply_b_dec_to_input": true, "architecture": "jumprelu"}
