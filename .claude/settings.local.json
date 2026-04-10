@@ -3,7 +3,13 @@
     "allow": [
       "Bash(uvx --with mkdocs-material mike alias --push --update dev latest)",
       "Bash(find /Users/bioitx/Documents/GitHub/SAELens -name *.json)",
-      "Bash(python3 -c \":*)"
+      "Bash(python3 -c \":*)",
+      "Read(//Users/bioitx/Documents/GitHub/SyntheticLLMs/**)",
+      "Bash(git -C ../SyntheticLLMs status)",
+      "Bash(git subtree:*)",
+      "Bash(git -C ../SyntheticLLMs subtree add --prefix=feature_hierarchies /Users/bioitx/Documents/GitHub/SAELens feature-hierarchies-split --squash)",
+      "Bash(git -C ../SyntheticLLMs stash)",
+      "Bash(git -C ../SyntheticLLMs stash pop)"
     ]
   }
 }
